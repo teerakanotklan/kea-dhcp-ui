@@ -1,4 +1,4 @@
-const { execSync } = require('child_process');
+const { execSync, execFileSync } = require('child_process');
 const config = require('../config/default');
 const keaService = require('./keaService');
 
@@ -101,7 +101,7 @@ class SystemService {
     const pathToCheck = customPath || config.confPath;
 
     try {
-      const output = execSync(`sudo kea-dhcp4 -t "${pathToCheck}" 2>&1`, {
+      const output = execFileSync('sudo', [config.helperPath, 'validate', pathToCheck], {
         encoding: 'utf8',
         stdio: ['pipe', 'pipe', 'pipe']
       });
@@ -115,17 +115,15 @@ class SystemService {
   getLogs(service = 'all', limit = 100) {
     try {
       const safeLimit = Math.min(Math.max(parseInt(limit, 10) || 100, 1), 500);
-      let unitFlags = `-u ${this.dhcpService} -u ${this.ctrlAgentService}`;
+      let which = 'all';
       const s = (service || 'all').toLowerCase();
       if (s === 'ctrl-agent' || s === 'agent' || s === 'kea-ctrl-agent') {
-        unitFlags = `-u ${this.ctrlAgentService}`;
+        which = 'agent';
       } else if (s === 'dhcp4' || s === 'dhcp' || s === 'kea-dhcp4' || s === 'kea-dhcp4-server') {
-        unitFlags = `-u ${this.dhcpService}`;
-      } else {
-        unitFlags = `-u ${this.dhcpService} -u ${this.ctrlAgentService}`;
+        which = 'dhcp4';
       }
 
-      const output = execSync(`sudo journalctl ${unitFlags} -n ${safeLimit} --no-pager`, {
+      const output = execFileSync('sudo', [config.helperPath, 'logs', which, String(safeLimit)], {
         encoding: 'utf8',
         stdio: ['pipe', 'pipe', 'pipe']
       });

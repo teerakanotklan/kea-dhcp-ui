@@ -58,9 +58,23 @@ if (!fs.existsSync(backupDir)) {
   }
 }
 
+let jwtSecret = process.env.JWT_SECRET;
+if (!jwtSecret) {
+  if (process.env.NODE_ENV === 'production') {
+    console.warn('[Config] JWT_SECRET is not set; using a random per-process secret (sessions reset on restart).');
+    jwtSecret = require('crypto').randomBytes(32).toString('hex');
+  } else {
+    jwtSecret = 'kea-dhcp-super-secret-key-2026'; // development only
+  }
+}
+
+// Root-owned helper invoked through sudo for validation and log reads
+const helperPath = process.env.KEA_HELPER_PATH || '/usr/local/sbin/kea-dhcp-ui-helper';
+
 module.exports = {
   port: parseInt(process.env.PORT, 10) || 3000,
-  jwtSecret: process.env.JWT_SECRET || 'kea-dhcp-super-secret-key-2026',
+  jwtSecret,
+  helperPath,
   jwtExpiresIn: '24h',
   keaCtrlAgentUrl,
   confPath,

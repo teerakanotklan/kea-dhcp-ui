@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const config = require('../config/default');
@@ -13,19 +14,29 @@ class AuthService {
 
   initUsers() {
     if (!fs.existsSync(usersFile)) {
-      // Default Admin user (password: admin123)
+      // Initial admin password: ADMIN_PASSWORD env, else random in production,
+      // else 'admin123' for local development/tests only.
+      let initialPassword = process.env.ADMIN_PASSWORD;
+      if (!initialPassword) {
+        if (process.env.NODE_ENV === 'production') {
+          initialPassword = crypto.randomBytes(12).toString('base64url');
+          console.log(`[Auth] Generated initial admin password (shown once): ${initialPassword}`);
+        } else {
+          initialPassword = 'admin123';
+        }
+      }
       const salt = bcrypt.genSaltSync(10);
       const defaultUsers = [
         {
           id: 'user_admin',
           username: 'admin',
           name: 'DHCP Administrator',
-          passwordHash: bcrypt.hashSync('admin123', salt),
+          passwordHash: bcrypt.hashSync(initialPassword, salt),
           role: 'admin',
           createdAt: new Date().toISOString()
         }
       ];
-      fs.writeFileSync(usersFile, JSON.stringify(defaultUsers, null, 2), 'utf8');
+      fs.writeFileSync(usersFile, JSON.stringify(defaultUsers, null, 2), { encoding: 'utf8', mode: 0o600 });
     }
   }
 
