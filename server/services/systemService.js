@@ -115,16 +115,14 @@ class SystemService {
   getLogs(service = 'all', limit = 100) {
     try {
       const safeLimit = Math.min(Math.max(parseInt(limit, 10) || 100, 1), 500);
-      let unitFlags = `-u ${this.dhcpService}`;
+      let unitFlags = `-u ${this.dhcpService} -u ${this.ctrlAgentService}`;
       const s = (service || 'all').toLowerCase();
       if (s === 'ctrl-agent' || s === 'agent' || s === 'kea-ctrl-agent') {
         unitFlags = `-u ${this.ctrlAgentService}`;
-      } else if (s === 'ui' || s === 'kea-dhcp-ui' || s === 'isc-dhcp-ui') {
-        unitFlags = `-u kea-dhcp-ui`;
       } else if (s === 'dhcp4' || s === 'dhcp' || s === 'kea-dhcp4' || s === 'kea-dhcp4-server') {
         unitFlags = `-u ${this.dhcpService}`;
-      } else if (s === 'all') {
-        unitFlags = `-u ${this.dhcpService} -u ${this.ctrlAgentService} -u kea-dhcp-ui`;
+      } else {
+        unitFlags = `-u ${this.dhcpService} -u ${this.ctrlAgentService}`;
       }
 
       const output = execSync(`sudo journalctl ${unitFlags} -n ${safeLimit} --no-pager`, {
@@ -133,7 +131,10 @@ class SystemService {
       });
 
       const lines = output.trim().split('\n').filter(Boolean);
-      return lines.map((line, index) => {
+      const parsedLogs = [];
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
         let timestamp = line.slice(0, 15).trim();
         let svc = 'kea-dhcp4';
         let level = 'INFO';
@@ -149,9 +150,16 @@ class SystemService {
           payload = syslogMatch[3];
         }
 
+        // Strict Filter: Only include log lines originating from Kea daemons
+        const isKeaDaemon = svc.includes('dhcp4') || svc.includes('ctrl-agent') || svc.startsWith('kea-');
+        const hasKeaFormat = /^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}/.test(payload) || payload.includes('[kea-');
+
+        if (!isKeaDaemon && !hasKeaFormat) {
+          continue; // Discard non-Kea lines (e.g. pam_unix, sudo, systemd lifecycle)
+        }
+
         if (svc.includes('ctrl-agent')) svc = 'kea-ctrl-agent';
-        else if (svc.includes('dhcp4')) svc = 'kea-dhcp4';
-        else if (svc.includes('kea-dhcp-ui') || svc.includes('node')) svc = 'kea-dhcp-ui';
+        else svc = 'kea-dhcp4';
 
         // Parse Kea internal log: "2026-10-04 21:41:25.909 INFO  [kea-dhcp4.commands/4217.134261230369216] COMMAND_RECEIVED Received command 'lease4-get-all'"
         const keaMatch = payload.match(/^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}(?:\.\d+)?)\s+(INFO|WARN|WARNING|ERROR|FATAL|DEBUG)\s+\[([^\]]+)\]\s+(?:([A-Z0-9_]+)\s+)?(.*)$/);
@@ -161,7 +169,13 @@ class SystemService {
           level = rawLvl === 'WARNING' ? 'WARN' : (rawLvl === 'FATAL' ? 'ERROR' : rawLvl);
           event = keaMatch[4] || 'INFO';
           message = keaMatch[5] || '';
+          if (keaMatch[3].startsWith('kea-ctrl-agent')) {
+            svc = 'kea-ctrl-agent';
+          } else if (keaMatch[3].startsWith('kea-dhcp4')) {
+            svc = 'kea-dhcp4';
+          }
         } else {
+          // If a line doesn't match standard Kea format but is from Kea daemon (e.g. startup/critical notice)
           if (/error|failed|failure|fatal|crit/i.test(payload)) {
             level = 'ERROR';
           } else if (/warn/i.test(payload)) {
@@ -182,16 +196,18 @@ class SystemService {
           }
         }
 
-        return {
-          id: `log-${index}`,
+        parsedLogs.push({
+          id: `log-${parsedLogs.length}`,
           timestamp,
           service: svc,
           level,
           event,
           message,
           raw: line
-        };
-      });
+        });
+      }
+
+      return parsedLogs;
     } catch (err) {
       return [
         {

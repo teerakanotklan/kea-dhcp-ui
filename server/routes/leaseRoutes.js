@@ -42,4 +42,22 @@ router.post('/:ip/release', authMiddleware, async (req, res) => {
   }
 });
 
+// POST /api/leases/:ip/reserve
+router.post('/:ip/reserve', authMiddleware, async (req, res) => {
+  try {
+    const { mac, hostname, subnetId, overwrite } = req.body;
+    const ip = req.params.ip;
+    const result = await dhcpLeaseService.convertToReservation({
+      ip,
+      mac,
+      hostname,
+      subnetId,
+      overwrite: Boolean(overwrite)
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 module.exports = router;

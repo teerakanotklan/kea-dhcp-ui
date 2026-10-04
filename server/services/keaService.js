@@ -15,11 +15,14 @@ class KeaService {
   async sendCommand(command, service = ['dhcp4'], args = {}) {
     return new Promise((resolve, reject) => {
       const url = new URL(this.agentUrl);
-      const postData = JSON.stringify({
+      const payload = {
         command,
-        service: Array.isArray(service) ? service : [service],
-        arguments: args
-      });
+        service: Array.isArray(service) ? service : [service]
+      };
+      if (args && typeof args === 'object' && Object.keys(args).length > 0) {
+        payload.arguments = args;
+      }
+      const postData = JSON.stringify(payload);
 
       const options = {
         hostname: url.hostname,
@@ -201,7 +204,7 @@ class KeaService {
       if (lines.length <= 1) return [];
 
       const headers = lines[0].split(',').map(h => h.trim());
-      const leases = [];
+      const leaseMap = new Map();
 
       for (let i = 1; i < lines.length; i++) {
         const parts = lines[i].split(',').map(p => p.trim());
@@ -210,21 +213,29 @@ class KeaService {
           obj[h] = parts[idx];
         });
 
+        const ip = obj.address || obj['ip-address'];
+        if (!ip) continue;
+
         const validLft = parseInt(obj.valid_lifetime || obj['valid-lft'] || 0, 10);
         const expire = parseInt(obj.expire || 0, 10);
         const cltt = parseInt(obj.cltt || (expire && validLft ? expire - validLft : expire) || 0, 10);
 
-        leases.push({
-          'ip-address': obj.address || obj['ip-address'],
-          'hw-address': obj.hwaddr || obj['hw-address'],
+        const current = {
+          'ip-address': ip,
+          'hw-address': obj.hwaddr || obj['hw-address'] || '',
           'valid-lft': validLft,
           'cltt': cltt,
           'hostname': obj.hostname || '',
           'state': parseInt(obj.state || 0, 10),
           'subnet-id': parseInt(obj.subnet_id || obj['subnet-id'] || 1, 10)
-        });
+        };
+
+        const existing = leaseMap.get(ip);
+        if (!existing || (current.cltt > existing.cltt)) {
+          leaseMap.set(ip, current);
+        }
       }
-      return leases;
+      return Array.from(leaseMap.values());
     } catch (e) {
       return [];
     }

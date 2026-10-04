@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { ConfirmModal } from '../../components/ConfirmModal';
+import { ActionDropdown } from '../../components/ActionDropdown';
 import {
   Plus,
   Edit2,
@@ -30,6 +31,7 @@ const getCidr = (s) => {
 
 export function Scopes({ setNotification }) {
   const { apiFetch } = useAuth();
+  const navigate = useNavigate();
   const [scopes, setScopes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -239,40 +241,29 @@ export function Scopes({ setNotification }) {
                       )}
                     </td>
 
-                    {/* 4. Action */}
+                    {/* 4. Action Dropdown */}
                     <td className="text-right">
-                      <div className="inline-flex items-center gap-1.5">
-                        {/* Disable / Enable Toggle Button */}
-                        <button
-                          className={`btn-icon ${
-                            isDisabled
-                              ? 'text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-500/10'
-                              : 'text-amber-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-500/10'
-                          }`}
-                          onClick={() => (isDisabled ? handleToggle(sub) : setDisableTarget(sub))}
-                          title={isDisabled ? 'Enable Scope' : 'Disable Scope'}
-                        >
-                          {isDisabled ? <Power size={14} /> : <PowerOff size={14} />}
-                        </button>
-
-                        {/* Edit with Numeric ID */}
-                        <Link
-                          to={`/scopes/${sub.id || sub.subnet}/edit`}
-                          className="btn-icon"
-                          title="Edit Scope"
-                        >
-                          <Edit2 size={14} />
-                        </Link>
-
-                        {/* Delete triggering ConfirmModal */}
-                        <button
-                          className="btn-icon text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10"
-                          onClick={() => setDeleteTarget(sub)}
-                          title="Delete Scope"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
+                      <ActionDropdown
+                        items={[
+                          {
+                            label: 'Edit Scope',
+                            icon: Edit2,
+                            onClick: () => navigate(`/scopes/${sub.id || sub.subnet}/edit`)
+                          },
+                          {
+                            label: isDisabled ? 'Enable Scope' : 'Disable Scope',
+                            icon: isDisabled ? Power : PowerOff,
+                            onClick: () => (isDisabled ? handleToggle(sub) : setDisableTarget(sub))
+                          },
+                          { separator: true },
+                          {
+                            label: 'Delete Scope',
+                            icon: Trash2,
+                            danger: true,
+                            onClick: () => setDeleteTarget(sub)
+                          }
+                        ]}
+                      />
                     </td>
                   </tr>
                 );

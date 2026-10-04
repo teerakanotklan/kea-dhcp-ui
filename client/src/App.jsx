@@ -12,6 +12,7 @@ import { StaticIP } from './pages/static-hosts/StaticIP';
 import { StaticIPForm } from './pages/static-hosts/StaticIPForm';
 import { Leases } from './pages/Leases';
 import { ServiceLogs } from './pages/ServiceLogs';
+import { LogDetail } from './pages/LogDetail';
 import { NotFound } from './pages/NotFound';
 import { CheckCircle2, AlertTriangle, X } from 'lucide-react';
 
@@ -136,6 +137,7 @@ export function AppContent() {
                       {/* Leases & Logs */}
                       <Route path="/leases" element={<Leases setNotification={setNotification} />} />
                       <Route path="/logs" element={<ServiceLogs setNotification={setNotification} />} />
+                      <Route path="/logs/:id" element={<LogDetail setNotification={setNotification} />} />
 
                       {/* Settings */}
                       <Route path="/settings" element={<Settings setNotification={setNotification} />} />

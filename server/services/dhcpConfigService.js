@@ -333,7 +333,7 @@ class DhcpConfigService {
   /**
    * Reservation Management within a Subnet
    */
-  async addReservation(subnetId, reservation) {
+  async addReservation(subnetId, reservation, options = {}) {
     const { hwAddress, ipAddress, hostname } = reservation;
     if (!hwAddress || !ipAddress) {
       throw new Error('MAC address (hwAddress) and IP address are required');
@@ -350,23 +350,36 @@ class DhcpConfigService {
       subnet.reservations = [];
     }
 
-    // Check if MAC already reserved in this subnet
     const cleanMac = hwAddress.toLowerCase().trim();
-    const existing = subnet.reservations.find(
-      (r) => (r['hw-address'] || '').toLowerCase() === cleanMac || r['ip-address'] === ipAddress
+    const cleanIp = ipAddress.trim();
+
+    // Check if MAC or IP already reserved in this subnet
+    const existingIndex = subnet.reservations.findIndex(
+      (r) => (r['hw-address'] || '').toLowerCase() === cleanMac || r['ip-address'] === cleanIp
     );
-    if (existing) {
-      throw new Error(`Reservation with MAC ${hwAddress} or IP ${ipAddress} already exists in this subnet`);
+
+    if (existingIndex !== -1) {
+      if (options.overwrite) {
+        // Remove all reservations matching this IP or MAC across subnets
+        subnet.reservations = subnet.reservations.filter(
+          (r) => (r['hw-address'] || '').toLowerCase() !== cleanMac && r['ip-address'] !== cleanIp
+        );
+      } else {
+        const conflict = subnet.reservations[existingIndex];
+        throw new Error(
+          `Reservation conflict: IP ${cleanIp} or MAC ${cleanMac} is already reserved by ${conflict['hw-address']} (${conflict.hostname || 'unnamed'})`
+        );
+      }
     }
 
     const newRes = {
       'hw-address': cleanMac,
-      'ip-address': ipAddress.trim(),
+      'ip-address': cleanIp,
       hostname: hostname ? hostname.trim() : ''
     };
 
     subnet.reservations.push(newRes);
-    await keaService.setConfig(dhcp4, `Added reservation ${cleanMac} (${ipAddress}) in subnet ${subnet.id}`);
+    await keaService.setConfig(dhcp4, `Added reservation ${cleanMac} (${cleanIp}) in subnet ${subnet.id}`);
     return newRes;
   }
 

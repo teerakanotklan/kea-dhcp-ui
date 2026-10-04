@@ -81,6 +81,14 @@
     @apply bg-cyan-50 text-cyan-700 border border-cyan-200 dark:bg-cyan-500/15 dark:text-cyan-400 dark:border-cyan-500/30;
   }
 
+  .badge-purple {
+    @apply bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-500/15 dark:text-indigo-400 dark:border-indigo-500/30;
+  }
+
+  .badge-conflict {
+    @apply bg-amber-50 text-amber-800 border border-amber-300 dark:bg-amber-500/20 dark:text-amber-300 dark:border-amber-500/40;
+  }
+
   .pulse-dot {
     @apply w-2 h-2 rounded-full bg-current shadow-[0_0_8px_currentColor] animate-pulse;
   }
