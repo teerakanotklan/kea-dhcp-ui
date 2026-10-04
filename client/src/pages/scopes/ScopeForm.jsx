@@ -1,16 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { ConfirmModal } from '../../components/ConfirmModal';
 import {
   Network,
   Save,
   Plus,
   Trash2,
-  Sliders,
   Globe,
   SlidersHorizontal,
-  Power,
-  PowerOff
+  BookmarkCheck,
+  Server
 } from 'lucide-react';
 
 const PREDEFINED_DHCP_OPTIONS = [
@@ -18,17 +18,8 @@ const PREDEFINED_DHCP_OPTIONS = [
   { value: 'bootfile-name', label: 'bootfile-name (PXE Boot File)', example: '"pxelinux.0" or "ipxe.efi"' },
   { value: 'tftp-server-name', label: 'tftp-server-name (TFTP Server)', example: '"tftp.corp.lan" or 192.168.1.5' },
   { value: 'next-server', label: 'next-server (PXE Server IP)', example: '192.168.1.5' },
-  { value: 'netbios-name-servers', label: 'netbios-name-servers (WINS Server)', example: '192.168.1.10, 192.168.1.11' },
-  { value: 'netbios-node-type', label: 'netbios-node-type (NetBIOS Node Type)', example: '8' },
   { value: 'domain-search', label: 'domain-search (Search Domains)', example: '"corp.lan", "sales.corp.lan"' },
   { value: 'interface-mtu', label: 'interface-mtu (MTU Size)', example: '1492' },
-  { value: 'default-ip-ttl', label: 'default-ip-ttl (IP TTL)', example: '64' },
-  { value: 'time-servers', label: 'time-servers (Time Server)', example: '192.168.1.1' },
-  { value: 'time-offset', label: 'time-offset (Time Offset in seconds)', example: '25200' },
-  { value: 'log-servers', label: 'log-servers (Syslog Server)', example: '192.168.1.250' },
-  { value: 'wpad', label: 'wpad (Proxy Auto-Discovery URL)', example: '"http://wpad.corp.lan/wpad.dat"' },
-  { value: 'captive-portal', label: 'captive-portal (Captive Portal URL)', example: '"https://login.wifi.corp.lan"' },
-  { value: 'vendor-encapsulated-options', label: 'vendor-encapsulated-options (Vendor Option 43)', example: '01:04:c0:a8:01:0a' },
   { value: 'custom', label: 'Custom Option (Specify Name)...', example: 'value or "string"' },
 ];
 
@@ -51,80 +42,72 @@ export function ScopeForm({ setNotification }) {
     routers: '',
     domainNameServers: '8.8.8.8, 1.1.1.1',
     domainName: '',
-    defaultLeaseTime: 86400,
+    defaultLeaseTime: 4000,
   });
 
   const [customOptions, setCustomOptions] = useState([]);
+  const [reservations, setReservations] = useState([]);
+
+  // New reservation inline state
+  const [newRes, setNewRes] = useState({ hostname: '', mac: '', ip: '' });
+  const [resAdding, setResAdding] = useState(false);
+  const [deleteResTarget, setDeleteResTarget] = useState(null);
+
+  const fetchScopeData = async () => {
+    if (!isEdit) return;
+    try {
+      setLoading(true);
+      const res = await apiFetch(`/api/scopes/${id}`);
+      if (!res.ok) {
+        throw new Error(`Scope #${id} not found`);
+      }
+      const found = await res.json();
+
+      setFormData({
+        name: found.name || '',
+        subnet: found.subnet,
+        netmask: found.netmask || '255.255.255.0',
+        disabled: Boolean(found.disabled),
+        rangeStart: found.rangeStart || '',
+        rangeEnd: found.rangeEnd || '',
+        routers: found.routers || '',
+        domainNameServers: found.domainNameServers || '',
+        domainName: found.domainName || '',
+        defaultLeaseTime: found.defaultLeaseTime || 4000,
+      });
+
+      setReservations(found.reservations || []);
+
+      if (Array.isArray(found.customOptions)) {
+        const mapped = found.customOptions.map((opt) => {
+          const isPredefined = PREDEFINED_DHCP_OPTIONS.some(
+            (p) => p.value !== 'custom' && p.value === opt.name
+          );
+          return {
+            type: isPredefined ? opt.name : 'custom',
+            customName: isPredefined ? '' : opt.name,
+            value: opt.value || '',
+          };
+        });
+        setCustomOptions(mapped);
+      }
+    } catch (err) {
+      setNotification({ type: 'danger', message: err.message });
+      navigate('/scopes');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    if (!isEdit) return;
-
-    const fetchScopeData = async () => {
-      try {
-        setLoading(true);
-        const res = await apiFetch(`/api/scopes/${id}`);
-        if (!res.ok) {
-          throw new Error(`Scope #${id} not found`);
-        }
-        const found = await res.json();
-
-        setFormData({
-          name: found.name || '',
-          subnet: found.subnet,
-          netmask: found.netmask || '255.255.255.0',
-          disabled: Boolean(found.disabled),
-          rangeStart: found.rangeStart || '',
-          rangeEnd: found.rangeEnd || '',
-          routers: found.routers || '',
-          domainNameServers: found.domainNameServers || '',
-          domainName: found.domainName || '',
-          defaultLeaseTime: found.defaultLeaseTime || 86400,
-        });
-
-        if (Array.isArray(found.customOptions)) {
-          const mapped = found.customOptions.map((opt) => {
-            const isPredefined = PREDEFINED_DHCP_OPTIONS.some(
-              (p) => p.value !== 'custom' && p.value === opt.name
-            );
-            return {
-              type: isPredefined ? opt.name : 'custom',
-              customName: isPredefined ? '' : opt.name,
-              value: opt.value || '',
-            };
-          });
-          setCustomOptions(mapped);
-        }
-      } catch (err) {
-        setNotification({ type: 'danger', message: err.message });
-        navigate('/scopes');
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchScopeData();
   }, [id, isEdit]);
 
-  const handleChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value,
-    }));
-  };
-
   const addCustomOption = (preset = null) => {
-    if (preset) {
-      setCustomOptions([
-        ...customOptions,
-        { type: preset, customName: '', value: '' },
-      ]);
-    } else {
-      setCustomOptions([
-        ...customOptions,
-        { type: 'ntp-servers', customName: '', value: '' },
-      ]);
-    }
+    setCustomOptions([
+      ...customOptions,
+      { type: preset || 'ntp-servers', customName: '', value: '' },
+    ]);
   };
 
   const removeCustomOption = (index) => {
@@ -146,9 +129,52 @@ export function ScopeForm({ setNotification }) {
     setCustomOptions(updated);
   };
 
-  const getOptionExample = (type) => {
-    const item = PREDEFINED_DHCP_OPTIONS.find((p) => p.value === type);
-    return item ? item.example : 'Value';
+  const handleAddReservation = async (e) => {
+    e.preventDefault();
+    if (!newRes.mac || !newRes.ip) {
+      setNotification({ type: 'danger', message: 'MAC Address and IP Address are required' });
+      return;
+    }
+
+    try {
+      setResAdding(true);
+      const res = await apiFetch(`/api/scopes/${id}/reservations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          hwAddress: newRes.mac,
+          ipAddress: newRes.ip,
+          hostname: newRes.hostname
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+
+      setNotification({ type: 'success', message: `Reservation for ${newRes.ip} added successfully` });
+      setNewRes({ hostname: '', mac: '', ip: '' });
+      await fetchScopeData();
+    } catch (err) {
+      setNotification({ type: 'danger', message: err.message });
+    } finally {
+      setResAdding(false);
+    }
+  };
+
+  const handleDeleteReservation = async () => {
+    if (!deleteResTarget) return;
+    try {
+      const res = await apiFetch(`/api/scopes/${id}/reservations/${deleteResTarget.mac}`, {
+        method: 'DELETE'
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+
+      setNotification({ type: 'success', message: `Reservation ${deleteResTarget.mac} deleted` });
+      setDeleteResTarget(null);
+      await fetchScopeData();
+    } catch (err) {
+      setNotification({ type: 'danger', message: err.message });
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -174,6 +200,7 @@ export function ScopeForm({ setNotification }) {
       if (isEdit) {
         const res = await apiFetch(`/api/scopes/${id}`, {
           method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
         const result = await res.json();
@@ -182,6 +209,7 @@ export function ScopeForm({ setNotification }) {
       } else {
         const res = await apiFetch('/api/scopes', {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
         const result = await res.json();
@@ -208,7 +236,7 @@ export function ScopeForm({ setNotification }) {
 
   return (
     <div className="page-wrapper max-w-7xl mx-auto space-y-6">
-      {/* Header (No Left Arrow, clean Breadcrumb + Action buttons) */}
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">
@@ -216,8 +244,8 @@ export function ScopeForm({ setNotification }) {
           </h1>
           <p className="text-slate-500 dark:text-slate-400 text-xs sm:text-sm mt-0.5">
             {isEdit
-              ? 'Modify address pool range, routing options, and specialized DHCP parameters'
-              : 'Define a new network segment and configure dynamic IP address allocation'}
+              ? 'Modify Kea subnet pools, options, and integrated host reservations'
+              : 'Define a new Kea DHCPv4 subnet and dynamic IP pool'}
           </p>
         </div>
 
@@ -254,13 +282,12 @@ export function ScopeForm({ setNotification }) {
               </h2>
             </div>
 
-            {/* Scope Disable / Enable Toggle Switch */}
             <label className="inline-flex items-center gap-2.5 cursor-pointer select-none">
               <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">
                 Scope Status:
               </span>
               <div
-                onClick={() => setFormData(p => ({ ...p, disabled: !p.disabled }))}
+                onClick={() => setFormData((p) => ({ ...p, disabled: !p.disabled }))}
                 className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                   !formData.disabled ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-white/20'
                 }`}
@@ -290,22 +317,22 @@ export function ScopeForm({ setNotification }) {
                 required
               />
               <span className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
-                Friendly label to identify this scope
+                Descriptive label for this Kea subnet
               </span>
             </div>
 
             <div className="form-group mb-0">
-              <label className="form-label">Scope Network IP *</label>
+              <label className="form-label">Subnet Network IP or CIDR *</label>
               <input
                 type="text"
                 className="input-text font-mono"
-                placeholder="192.168.1.0"
+                placeholder="192.168.1.0 or 192.168.1.0/24"
                 value={formData.subnet}
                 onChange={(e) => setFormData({ ...formData, subnet: e.target.value })}
                 required
               />
               <span className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
-                The network IP address identifying this scope
+                The network IP address (e.g. 192.168.1.0)
               </span>
             </div>
 
@@ -320,7 +347,7 @@ export function ScopeForm({ setNotification }) {
                 required
               />
               <span className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
-                Specifies the network prefix (e.g. 255.255.255.0 for /24)
+                Network mask prefix (e.g. 255.255.255.0 for /24)
               </span>
             </div>
 
@@ -334,7 +361,7 @@ export function ScopeForm({ setNotification }) {
                 onChange={(e) => setFormData({ ...formData, rangeStart: e.target.value })}
               />
               <span className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
-                First IP address in the dynamic leasing pool
+                First dynamic assignable IP
               </span>
             </div>
 
@@ -348,7 +375,7 @@ export function ScopeForm({ setNotification }) {
                 onChange={(e) => setFormData({ ...formData, rangeEnd: e.target.value })}
               />
               <span className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
-                Last IP address in the dynamic leasing pool
+                Last dynamic assignable IP
               </span>
             </div>
           </div>
@@ -398,11 +425,11 @@ export function ScopeForm({ setNotification }) {
             </div>
 
             <div className="form-group mb-0">
-              <label className="form-label">Default Lease Time (seconds)</label>
+              <label className="form-label">Valid Lifetime (seconds)</label>
               <input
                 type="number"
                 className="input-text"
-                placeholder="86400 (1 day)"
+                placeholder="4000"
                 value={formData.defaultLeaseTime}
                 onChange={(e) => setFormData({ ...formData, defaultLeaseTime: e.target.value })}
               />
@@ -410,7 +437,7 @@ export function ScopeForm({ setNotification }) {
           </div>
         </div>
 
-        {/* Section 3: Specialized & Additional DHCP Options */}
+        {/* Section 3: Additional DHCP Options */}
         <div className="glass-card space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200/80 dark:border-white/10">
             <div className="flex items-center gap-2.5">
@@ -420,7 +447,7 @@ export function ScopeForm({ setNotification }) {
                   3. Additional DHCP Options
                 </h2>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Configure PXE boot directives, NTP servers, MTU sizes, and vendor custom options
+                  Custom Kea option-data directives
                 </p>
               </div>
             </div>
@@ -434,24 +461,6 @@ export function ScopeForm({ setNotification }) {
             </button>
           </div>
 
-          {/* Quick-add preset badges */}
-          <div className="flex flex-wrap items-center gap-1.5 pt-1">
-            <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mr-1">
-              Quick Suggestions:
-            </span>
-            {['ntp-servers', 'bootfile-name', 'next-server', 'interface-mtu', 'domain-search', 'wpad'].map((preset) => (
-              <button
-                key={preset}
-                type="button"
-                className="text-[11px] px-2 py-0.5 rounded-md bg-slate-100 dark:bg-white/5 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-500/20 dark:hover:text-indigo-300 border border-slate-200 dark:border-white/10 transition-colors"
-                onClick={() => addCustomOption(preset)}
-              >
-                + {preset}
-              </button>
-            ))}
-          </div>
-
-          {/* Option rows list */}
           {customOptions.length > 0 ? (
             <div className="space-y-3 pt-2">
               {customOptions.map((opt, index) => {
@@ -459,9 +468,8 @@ export function ScopeForm({ setNotification }) {
                 return (
                   <div
                     key={index}
-                    className="inner-panel flex flex-col md:flex-row items-stretch md:items-center gap-3 p-3.5 transition-all"
+                    className="inner-panel flex flex-col md:flex-row items-stretch md:items-center gap-3 p-3.5"
                   >
-                    {/* Option Selector */}
                     <div className="w-full md:w-5/12">
                       <select
                         className="select-input text-xs sm:text-sm py-2"
@@ -476,7 +484,6 @@ export function ScopeForm({ setNotification }) {
                       </select>
                     </div>
 
-                    {/* Custom Option Name Input (shown if 'custom' is selected) */}
                     {isCustom && (
                       <div className="w-full md:w-3/12">
                         <input
@@ -490,19 +497,17 @@ export function ScopeForm({ setNotification }) {
                       </div>
                     )}
 
-                    {/* Option Value Input */}
                     <div className="flex-1">
                       <input
                         type="text"
                         className="input-text text-xs sm:text-sm py-2 font-mono"
-                        placeholder={`e.g. ${getOptionExample(opt.type)}`}
+                        placeholder="Option Value"
                         value={opt.value}
                         onChange={(e) => handleOptionFieldChange(index, 'value', e.target.value)}
                         required
                       />
                     </div>
 
-                    {/* Remove Option Button */}
                     <button
                       type="button"
                       className="btn-icon text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10 shrink-0 self-end md:self-center"
@@ -517,10 +522,115 @@ export function ScopeForm({ setNotification }) {
             </div>
           ) : (
             <div className="text-center py-6 text-xs text-slate-400 dark:text-slate-500 border border-dashed border-slate-200 dark:border-white/10 rounded-xl">
-              No additional DHCP options configured. Click "+ Add Option" or select a quick suggestion above.
+              No additional options configured.
             </div>
           )}
         </div>
+
+        {/* Section 4: Integrated Static Host Reservations (Only in Edit mode) */}
+        {isEdit && (
+          <div className="glass-card space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200/80 dark:border-white/10">
+              <div className="flex items-center gap-2.5">
+                <BookmarkCheck size={20} className="text-amber-500" />
+                <div>
+                  <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                    4. Static Host Reservations (Integrated in Scope)
+                  </h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Kea native reservations (`reservations`) for fixed MAC-to-IP bindings within this subnet
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Add Reservation Inline Form */}
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 space-y-3">
+              <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                + Add New Host Reservation to this Scope
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                <input
+                  type="text"
+                  className="input-text text-xs"
+                  placeholder="Hostname (e.g. printer-01)"
+                  value={newRes.hostname}
+                  onChange={(e) => setNewRes({ ...newRes, hostname: e.target.value })}
+                />
+                <input
+                  type="text"
+                  className="input-text text-xs font-mono"
+                  placeholder="MAC Address (e.g. 00:11:22:33:44:55)"
+                  value={newRes.mac}
+                  onChange={(e) => setNewRes({ ...newRes, mac: e.target.value })}
+                />
+                <input
+                  type="text"
+                  className="input-text text-xs font-mono"
+                  placeholder={`Fixed IP (e.g. ${formData.subnet.split('.')[0]}.${formData.subnet.split('.')[1] || '168'}.${formData.subnet.split('.')[2] || '1'}.50)`}
+                  value={newRes.ip}
+                  onChange={(e) => setNewRes({ ...newRes, ip: e.target.value })}
+                />
+                <button
+                  type="button"
+                  className="btn btn-primary text-xs py-2"
+                  onClick={handleAddReservation}
+                  disabled={resAdding}
+                >
+                  <Plus size={14} />
+                  {resAdding ? 'Adding...' : 'Add Reservation'}
+                </button>
+              </div>
+            </div>
+
+            {/* Reservations Table */}
+            <div className="table-container">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Hostname</th>
+                    <th>MAC Address</th>
+                    <th>Fixed IP Address</th>
+                    <th className="text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {reservations.length > 0 ? (
+                    reservations.map((r, idx) => (
+                      <tr key={idx}>
+                        <td className="font-semibold text-sm text-slate-900 dark:text-white">
+                          {r.hostname || r.name || '-'}
+                        </td>
+                        <td className="font-mono text-xs text-slate-600 dark:text-slate-400">
+                          {r.mac}
+                        </td>
+                        <td className="font-mono text-xs font-bold text-indigo-600 dark:text-indigo-400">
+                          {r.ip}
+                        </td>
+                        <td className="text-right">
+                          <button
+                            type="button"
+                            className="btn-icon text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10"
+                            onClick={() => setDeleteResTarget(r)}
+                            title="Delete Reservation"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={4} className="text-center py-6 text-xs text-slate-400">
+                        No static host reservations configured in this scope yet.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
         {/* Footer Submit Buttons */}
         <div className="flex items-center justify-end gap-3 pt-2">
@@ -542,6 +652,16 @@ export function ScopeForm({ setNotification }) {
           </button>
         </div>
       </form>
+
+      {/* Delete Reservation Confirm Modal */}
+      <ConfirmModal
+        isOpen={Boolean(deleteResTarget)}
+        onClose={() => setDeleteResTarget(null)}
+        onConfirm={handleDeleteReservation}
+        title="Delete Reservation"
+        message={`Are you sure you want to remove reservation for IP ${deleteResTarget?.ip} (${deleteResTarget?.mac})?`}
+        confirmText="Remove Reservation"
+      />
     </div>
   );
 }

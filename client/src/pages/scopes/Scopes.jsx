@@ -177,6 +177,8 @@ export function Scopes({ setNotification }) {
                 <th className="text-center w-16">No.</th>
                 <th>Scope Name</th>
                 <th>CIDR</th>
+                <th>Pool Range</th>
+                <th>Static Hosts</th>
                 <th>Status</th>
                 <th className="text-right">Action</th>
               </tr>
@@ -185,9 +187,10 @@ export function Scopes({ setNotification }) {
               {filteredScopes.map((sub, index) => {
                 const isConfigured = Boolean(sub.rangeStart && sub.rangeEnd);
                 const isDisabled = Boolean(sub.disabled);
+                const resCount = sub.reservations?.length || 0;
 
                 return (
-                  <tr key={sub.subnet}>
+                  <tr key={sub.id || sub.subnet}>
                     {/* 1. No. */}
                     <td className="text-center font-mono text-xs text-slate-400 dark:text-slate-500">
                       {index + 1}
@@ -199,11 +202,26 @@ export function Scopes({ setNotification }) {
                     </td>
 
                     {/* CIDR */}
-                    <td className="font-mono text-sm text-slate-700 dark:text-slate-300">
-                      {getCidr(sub) || <span className="text-slate-400">-</span>}
+                    <td className="font-mono text-sm text-cyan-600 dark:text-cyan-400 font-bold">
+                      {sub.subnetCidr || getCidr(sub) || <span className="text-slate-400">-</span>}
                     </td>
 
-                    {/* 3. Status */}
+                    {/* Pool Range */}
+                    <td className="font-mono text-xs text-slate-600 dark:text-slate-400">
+                      {sub.rangeStart && sub.rangeEnd ? `${sub.rangeStart} - ${sub.rangeEnd}` : <span className="text-slate-400 italic">None</span>}
+                    </td>
+
+                    {/* Static Reservations */}
+                    <td>
+                      <Link
+                        to={`/scopes/${sub.id || sub.subnet}/edit`}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 transition-colors"
+                      >
+                        {resCount} reserved
+                      </Link>
+                    </td>
+
+                    {/* Status */}
                     <td>
                       {isDisabled ? (
                         <span className="badge badge-danger">

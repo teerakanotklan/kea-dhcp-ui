@@ -6,6 +6,7 @@ const dhcpLeaseService = require('../services/dhcpLeaseService');
 const systemService = require('../services/systemService');
 
 function ipToInt(ip) {
+  if (!ip) return 0;
   return ip.split('.').reduce((acc, octet) => (acc << 8) + parseInt(octet, 10), 0) >>> 0;
 }
 
@@ -20,7 +21,6 @@ function calculateRangeCapacity(start, end) {
   }
 }
 
-// Check if IP is in range
 function isIpInRange(ip, start, end) {
   if (!ip || !start || !end) return false;
   try {
@@ -32,28 +32,31 @@ function isIpInRange(ip, start, end) {
 }
 
 // GET /api/dashboard
-router.get('/', authMiddleware, (req, res) => {
+router.get('/', authMiddleware, async (req, res) => {
   try {
     const serviceStatus = systemService.getServiceStatus();
-    const configData = dhcpConfigService.parseConfig();
-    const leases = dhcpLeaseService.getLeases();
+    const configData = await dhcpConfigService.parseConfig();
+    const leases = await dhcpLeaseService.getLeases();
 
-    const activeLeases = leases.filter(l => l.status === 'active');
-    const expiredLeases = leases.filter(l => l.status === 'expired');
+    const activeLeases = leases.filter((l) => l.status === 'active');
+    const expiredLeases = leases.filter((l) => l.status === 'expired');
 
     let totalPoolCapacity = 0;
-    const subnetStats = configData.subnets.map(s => {
+    const subnetStats = configData.subnets.map((s) => {
       const capacity = calculateRangeCapacity(s.rangeStart, s.rangeEnd);
       totalPoolCapacity += capacity;
 
-      const activeInSubnet = activeLeases.filter(l => isIpInRange(l.ip, s.rangeStart, s.rangeEnd)).length;
+      const activeInSubnet = activeLeases.filter((l) => isIpInRange(l.ip, s.rangeStart, s.rangeEnd)).length;
       const utilization = capacity > 0 ? Math.round((activeInSubnet / capacity) * 100) : 0;
 
       return {
+        id: s.id,
         subnet: s.subnet,
         netmask: s.netmask,
+        cidr: s.cidr,
         range: s.rangeStart && s.rangeEnd ? `${s.rangeStart} - ${s.rangeEnd}` : 'N/A',
         capacity,
+        reservationsCount: (s.reservations || []).length,
         activeLeases: activeInSubnet,
         utilization
       };

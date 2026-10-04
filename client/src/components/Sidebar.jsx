@@ -28,12 +28,6 @@ export function Sidebar({ isOpen, onClose }) {
       isActive: (pathname) => pathname.startsWith('/scopes') || pathname.startsWith('/subnets')
     },
     {
-      to: '/static-hosts',
-      label: 'Static IPs',
-      icon: BookmarkCheck,
-      isActive: (pathname) => pathname.startsWith('/static-hosts')
-    },
-    {
       to: '/leases',
       label: 'Leases',
       icon: Wifi,
@@ -78,7 +72,7 @@ export function Sidebar({ isOpen, onClose }) {
             </div>
             <div>
               <h1 className="font-bold text-base tracking-tight text-slate-900 dark:text-white">
-                ISC DHCP UI
+                Kea DHCP UI
               </h1>
               <span className="text-[11px] font-semibold text-cyan-600 dark:text-cyan-400 uppercase tracking-wider">
                 Control Panel

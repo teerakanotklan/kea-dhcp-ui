@@ -1,100 +1,69 @@
-const fs = require('fs');
-const config = require('../config/default');
+const keaService = require('./keaService');
 
 class DhcpLeaseService {
-  constructor() {
-    this.leasesPath = config.leasesPath;
-  }
+  async getLeases() {
+    try {
+      const rawLeases = await keaService.getAllLeases();
+      const now = Date.now();
 
-  parseLeaseTime(timeStr) {
-    // Format: "4 2026/10/01 08:30:00" -> UTC
-    if (!timeStr) return null;
-    const parts = timeStr.trim().split(/\s+/);
-    if (parts.length >= 3) {
-      const datePart = parts[1].replace(/\//g, '-');
-      const timePart = parts[2];
-      return new Date(`${datePart}T${timePart}Z`);
-    }
-    return new Date(timeStr);
-  }
+      const leases = rawLeases.map((l) => {
+        const ip = l['ip-address'] || l.ip || '';
+        const mac = (l['hw-address'] || l.mac || '').toLowerCase();
+        const hostname = l.hostname || '';
+        const cltt = parseInt(l.cltt || 0, 10);
+        const validLft = parseInt(l['valid-lft'] || l.validLft || 0, 10);
 
-  getLeases() {
-    if (!fs.existsSync(this.leasesPath)) {
+        let starts = null;
+        let ends = null;
+        let remainingSeconds = 0;
+        let status = 'active';
+
+        if (cltt > 0) {
+          const startTimeMs = cltt * 1000;
+          starts = new Date(startTimeMs).toISOString();
+
+          if (validLft > 0) {
+            const endTimeMs = (cltt + validLft) * 1000;
+            ends = new Date(endTimeMs).toISOString();
+            remainingSeconds = Math.max(0, Math.floor((endTimeMs - now) / 1000));
+            if (endTimeMs < now) {
+              status = 'expired';
+            }
+          }
+        }
+
+        // Kea state 0: active, 1: declining, 2: reclaimed
+        if (l.state === 1) status = 'declining';
+        if (l.state === 2) status = 'reclaimed';
+
+        return {
+          ip,
+          mac,
+          hostname,
+          bindingState: status,
+          status,
+          starts,
+          ends,
+          remainingSeconds,
+          subnetId: l['subnet-id'] || 1
+        };
+      });
+
+      return leases.sort((a, b) => {
+        if (a.status === 'active' && b.status !== 'active') return -1;
+        if (a.status !== 'active' && b.status === 'active') return 1;
+        return a.ip.localeCompare(b.ip, undefined, { numeric: true });
+      });
+    } catch (err) {
       return [];
     }
-
-    const content = fs.readFileSync(this.leasesPath, 'utf8');
-    const leaseBlocks = content.match(/lease\s+([0-9.]+)\s*\{([^}]*)\}/g) || [];
-
-    // ISC DHCP leases are append-only. We want the latest lease for each IP.
-    const leaseMap = new Map();
-    const now = new Date();
-
-    for (const block of leaseBlocks) {
-      const ipMatch = block.match(/lease\s+([0-9.]+)/);
-      if (!ipMatch) continue;
-      const ip = ipMatch[1];
-
-      const macMatch = block.match(/hardware\s+ethernet\s+([0-9a-fA-F:]{17});/i);
-      const hostMatch = block.match(/client-hostname\s+"([^"]+)";/);
-      const stateMatch = block.match(/binding\s+state\s+(\w+);/);
-      const startsMatch = block.match(/starts\s+([^;]+);/);
-      const endsMatch = block.match(/ends\s+([^;]+);/);
-      const clttMatch = block.match(/cltt\s+([^;]+);/);
-
-      const starts = startsMatch ? this.parseLeaseTime(startsMatch[1]) : null;
-      const ends = endsMatch ? this.parseLeaseTime(endsMatch[1]) : null;
-      const rawState = stateMatch ? stateMatch[1].toLowerCase() : 'unknown';
-
-      let status = rawState;
-      if (rawState === 'active') {
-        if (ends && ends < now) {
-          status = 'expired';
-        } else {
-          status = 'active';
-        }
-      }
-
-      const leaseObj = {
-        ip,
-        mac: macMatch ? macMatch[1].toLowerCase() : '',
-        hostname: hostMatch ? hostMatch[1] : '',
-        bindingState: rawState,
-        status: status,
-        starts: starts ? starts.toISOString() : null,
-        ends: ends ? ends.toISOString() : null,
-        remainingSeconds: ends ? Math.max(0, Math.floor((ends.getTime() - now.getTime()) / 1000)) : 0
-      };
-
-      leaseMap.set(ip, leaseObj);
-    }
-
-    return Array.from(leaseMap.values()).sort((a, b) => {
-      // Sort active first, then by IP
-      if (a.status === 'active' && b.status !== 'active') return -1;
-      if (a.status !== 'active' && b.status === 'active') return 1;
-      return a.ip.localeCompare(b.ip, undefined, { numeric: true });
-    });
   }
 
-  releaseLease(ip) {
-    if (!fs.existsSync(this.leasesPath)) {
-      throw new Error('Leases file not found');
+  async releaseLease(ip) {
+    if (!ip) {
+      throw new Error('IP address is required');
     }
-
-    let content = fs.readFileSync(this.leasesPath, 'utf8');
-    const regex = new RegExp(`lease\\s+${ip.replace(/\./g, '\\.')}\\s*\\{[^}]*\\}`, 'g');
-
-    if (!regex.test(content)) {
-      throw new Error(`Lease for IP ${ip} not found`);
-    }
-
-    // Append a release record
-    const nowUtc = new Date().toISOString().replace(/T/, ' ').replace(/\..+/, '').replace(/-/g, '/');
-    const releaseEntry = `\nlease ${ip} {\n  starts 0 ${nowUtc};\n  ends 0 ${nowUtc};\n  binding state free;\n}\n`;
-
-    fs.appendFileSync(this.leasesPath, releaseEntry, 'utf8');
-    return { success: true, message: `Lease for ${ip} marked as released/free` };
+    return await keaService.releaseLease(ip);
   }
 }
 

@@ -15,9 +15,9 @@ router.get('/status', authMiddleware, (req, res) => {
 });
 
 // GET /api/service/settings
-router.get('/settings', authMiddleware, (req, res) => {
+router.get('/settings', authMiddleware, async (req, res) => {
   try {
-    const settings = dhcpConfigService.getGlobalSettings();
+    const settings = await dhcpConfigService.getGlobalSettings();
     res.json(settings);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -25,9 +25,9 @@ router.get('/settings', authMiddleware, (req, res) => {
 });
 
 // PUT /api/service/settings
-router.put('/settings', authMiddleware, (req, res) => {
+router.put('/settings', authMiddleware, async (req, res) => {
   try {
-    const updated = dhcpConfigService.updateGlobalSettings(req.body);
+    const updated = await dhcpConfigService.updateGlobalSettings(req.body);
     res.json(updated);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -36,13 +36,13 @@ router.put('/settings', authMiddleware, (req, res) => {
 
 // POST /api/service/control
 router.post('/control', authMiddleware, (req, res) => {
-  const { action } = req.body;
+  const { action, target } = req.body;
   if (!action) {
     return res.status(400).json({ error: 'Action is required (restart, reload, stop, start)' });
   }
 
   try {
-    const result = systemService.controlService(action);
+    const result = systemService.controlService(action, target || 'all');
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -53,7 +53,8 @@ router.post('/control', authMiddleware, (req, res) => {
 router.get('/logs', authMiddleware, (req, res) => {
   try {
     const limit = parseInt(req.query.limit, 10) || 100;
-    const logs = systemService.getLogs(limit);
+    const target = req.query.service || 'all';
+    const logs = systemService.getLogs(target, limit);
     res.json(logs);
   } catch (err) {
     res.status(500).json({ error: err.message });

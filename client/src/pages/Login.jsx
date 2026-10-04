@@ -48,7 +48,7 @@ export function Login() {
             <Server size={28} />
           </div>
           <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white mb-1.5">
-            ISC DHCP Server
+            Kea DHCP Server
           </h1>
           <p className="text-slate-500 dark:text-slate-400 text-sm">
             Sign in to access Web Management Console

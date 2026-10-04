@@ -19,41 +19,30 @@ if (fs.existsSync('/etc/os-release')) {
   }
 }
 
-// Service Name: 'isc-dhcp-server' on Debian/Ubuntu, 'dhcpd' on RHEL/CentOS/Rocky
-const serviceName = process.env.DHCP_SERVICE_NAME || (isRhelBased ? 'dhcpd' : 'isc-dhcp-server');
+// Kea Service Names
+// On Debian/Ubuntu: 'kea-dhcp4-server' and 'kea-ctrl-agent'
+// On RHEL/Fedora: 'kea-dhcp4' and 'kea-ctrl-agent'
+const dhcpService = process.env.KEA_DHCP4_SERVICE || (isRhelBased ? 'kea-dhcp4' : 'kea-dhcp4-server');
+const ctrlAgentService = process.env.KEA_CTRL_AGENT_SERVICE || 'kea-ctrl-agent';
 
-// Leases Path: '/var/lib/dhcp/dhcpd.leases' on Debian/Ubuntu, '/var/lib/dhcpd/dhcpd.leases' on RHEL
-let detectedLeasesPath = isRhelBased ? '/var/lib/dhcpd/dhcpd.leases' : '/var/lib/dhcp/dhcpd.leases';
-if (!fs.existsSync(detectedLeasesPath)) {
-  if (fs.existsSync('/var/lib/dhcp/dhcpd.leases')) {
-    detectedLeasesPath = '/var/lib/dhcp/dhcpd.leases';
-  } else if (fs.existsSync('/var/lib/dhcpd/dhcpd.leases')) {
-    detectedLeasesPath = '/var/lib/dhcpd/dhcpd.leases';
-  }
-}
-
-// User data directory for local operational state (users.json)
+// User data directory for local operational state
 const dataDir = path.join(__dirname, '..', 'data');
 if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
 }
 
-// Primary configuration path
-let confPath = process.env.DHCP_CONF_PATH || '/etc/dhcp/dhcpd.conf';
-let leasesPath = process.env.DHCP_LEASES_PATH || detectedLeasesPath;
-let interfacesPath = process.env.DHCP_INTERFACES_PATH || (isDebianBased ? '/etc/default/isc-dhcp-server' : null);
-let backupDir = process.env.DHCP_BACKUP_DIR || '/etc/dhcp/backups';
+// Kea Control Agent REST API URL
+const keaCtrlAgentUrl = process.env.KEA_CTRL_AGENT_URL || 'http://127.0.0.1:8000';
+
+// Configuration paths
+let confPath = process.env.KEA_CONF_PATH || '/etc/kea/kea-dhcp4.conf';
+let ctrlAgentConfPath = process.env.KEA_CTRL_AGENT_CONF_PATH || '/etc/kea/kea-ctrl-agent.conf';
+let backupDir = process.env.KEA_BACKUP_DIR || '/etc/kea/backups';
 
 // Non-Linux development fallback if system paths are unavailable
 if (!isLinux) {
-  if (!fs.existsSync(confPath) && fs.existsSync(path.join(dataDir, 'dhcpd.conf'))) {
-    confPath = path.join(dataDir, 'dhcpd.conf');
-  }
-  if (!fs.existsSync(leasesPath) && fs.existsSync(path.join(dataDir, 'dhcpd.leases'))) {
-    leasesPath = path.join(dataDir, 'dhcpd.leases');
-  }
-  if (interfacesPath && !fs.existsSync(interfacesPath) && fs.existsSync(path.join(dataDir, 'isc-dhcp-server'))) {
-    interfacesPath = path.join(dataDir, 'isc-dhcp-server');
+  if (!fs.existsSync(confPath) && fs.existsSync(path.join(dataDir, 'kea-dhcp4.conf'))) {
+    confPath = path.join(dataDir, 'kea-dhcp4.conf');
   }
   if (!fs.existsSync(backupDir)) {
     backupDir = path.join(dataDir, 'backups');
@@ -65,19 +54,20 @@ if (!fs.existsSync(backupDir)) {
   try {
     fs.mkdirSync(backupDir, { recursive: true });
   } catch (e) {
-    // If not running as root or restricted directory, logged on startup
+    // Handled gracefully if permission denied
   }
 }
 
 module.exports = {
   port: parseInt(process.env.PORT, 10) || 3000,
-  jwtSecret: process.env.JWT_SECRET || 'isc-dhcp-super-secret-key-2026',
+  jwtSecret: process.env.JWT_SECRET || 'kea-dhcp-super-secret-key-2026',
   jwtExpiresIn: '24h',
+  keaCtrlAgentUrl,
   confPath,
-  leasesPath,
-  interfacesPath,
+  ctrlAgentConfPath,
   backupDir,
-  serviceName,
+  dhcpService,
+  ctrlAgentService,
   isDebianBased,
   isRhelBased,
 };

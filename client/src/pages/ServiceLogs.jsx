@@ -1,27 +1,58 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import {
   Terminal,
   RefreshCw,
   Search,
-  Clock
+  Clock,
+  Layers,
+  Download,
+  Copy,
+  Check,
+  Filter,
+  Eye,
+  X,
+  AlertCircle,
+  AlertTriangle,
+  Info,
+  Bug,
+  RotateCcw
 } from 'lucide-react';
+
+const EVENT_CATEGORY_OPTIONS = [
+  { value: 'all', label: 'All Event Categories' },
+  { value: 'lease', label: 'Lease Events (ALLOC / OFFER / GET)' },
+  { value: 'command', label: 'Commands & REST API (config / lease4)' },
+  { value: 'hook', label: 'Hooks & Callouts' },
+  { value: 'lifecycle', label: 'Lifecycle (STARTING / SHUTDOWN)' },
+  { value: 'error', label: 'Errors & Warnings' },
+];
 
 export function ServiceLogs({ setNotification }) {
   const { apiFetch } = useAuth();
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // Filters
+  const [selectedService, setSelectedService] = useState('all');
+  const [selectedLevel, setSelectedLevel] = useState('all');
+  const [selectedCategory, setSelectedCategory] = useState('all');
   const [search, setSearch] = useState('');
+  const [limit, setLimit] = useState(100);
   const [autoRefresh, setAutoRefresh] = useState(false);
+
+  // Interaction
+  const [copiedId, setCopiedId] = useState(null);
+  const [detailLog, setDetailLog] = useState(null);
 
   const fetchLogs = async () => {
     try {
       setLoading(true);
-      const res = await apiFetch('/api/service/logs?limit=150');
+      const res = await apiFetch(`/api/service/logs?limit=${limit}&service=${selectedService}`);
       const data = await res.json();
-      setLogs(data);
+      setLogs(Array.isArray(data) ? data : []);
     } catch (err) {
-      setNotification({ type: 'danger', message: err.message });
+      if (setNotification) setNotification({ type: 'danger', message: err.message });
     } finally {
       setLoading(false);
     }
@@ -29,18 +60,159 @@ export function ServiceLogs({ setNotification }) {
 
   useEffect(() => {
     fetchLogs();
-  }, []);
+  }, [selectedService, limit]);
 
   useEffect(() => {
     if (!autoRefresh) return;
-    const interval = setInterval(fetchLogs, 6000);
+    const interval = setInterval(fetchLogs, 5000);
     return () => clearInterval(interval);
-  }, [autoRefresh]);
+  }, [autoRefresh, selectedService, limit]);
 
-  const filteredLogs = logs.filter((l) =>
-    l.message.toLowerCase().includes(search.toLowerCase()) ||
-    l.timestamp.toLowerCase().includes(search.toLowerCase())
-  );
+  // Client-side filtering
+  const filteredLogs = useMemo(() => {
+    return logs.filter((log) => {
+      // 1. Severity Level filter
+      if (selectedLevel !== 'all') {
+        const logLvl = (log.level || 'INFO').toUpperCase();
+        if (selectedLevel === 'ERROR' && !(logLvl === 'ERROR' || logLvl === 'FATAL' || logLvl === 'CRIT')) {
+          return false;
+        } else if (selectedLevel !== 'ERROR' && logLvl !== selectedLevel) {
+          return false;
+        }
+      }
+
+      // 2. Event Category filter
+      if (selectedCategory !== 'all') {
+        const fullText = `${log.event || ''} ${log.message || ''}`.toLowerCase();
+        if (selectedCategory === 'lease' && !/lease|alloc|offer/i.test(fullText)) {
+          return false;
+        }
+        if (selectedCategory === 'command' && !/command|config-get|config-set|ctrl_agent/i.test(fullText)) {
+          return false;
+        }
+        if (selectedCategory === 'hook' && !/hook|callout|library/i.test(fullText)) {
+          return false;
+        }
+        if (selectedCategory === 'lifecycle' && !/starting|shutdown|started|stopping/i.test(fullText)) {
+          return false;
+        }
+        if (selectedCategory === 'error' && !/error|failed|failure|warn/i.test(fullText)) {
+          return false;
+        }
+      }
+
+      // 3. Free text search
+      if (search.trim()) {
+        const query = search.toLowerCase();
+        const msg = (log.message || '').toLowerCase();
+        const evt = (log.event || '').toLowerCase();
+        const ts = (log.timestamp || '').toLowerCase();
+        const svc = (log.service || '').toLowerCase();
+        if (!msg.includes(query) && !evt.includes(query) && !ts.includes(query) && !svc.includes(query)) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [logs, selectedLevel, selectedCategory, search]);
+
+  const handleCopy = (log) => {
+    const textToCopy = `[${log.timestamp}] [${log.service}] [${log.level}] ${log.event ? `[${log.event}] ` : ''}${log.message}`;
+    navigator.clipboard.writeText(textToCopy);
+    setCopiedId(log.id);
+    setTimeout(() => setCopiedId(null), 2000);
+    if (setNotification) {
+      setNotification({ type: 'success', message: 'Log line copied to clipboard' });
+    }
+  };
+
+  const handleResetFilters = () => {
+    setSelectedService('all');
+    setSelectedLevel('all');
+    setSelectedCategory('all');
+    setSearch('');
+  };
+
+  const exportCSV = () => {
+    if (filteredLogs.length === 0) return;
+    const headers = ['Timestamp', 'Service', 'Level', 'Event Tag', 'Message'];
+    const rows = filteredLogs.map((l) => [
+      `"${l.timestamp || ''}"`,
+      `"${l.service || ''}"`,
+      `"${l.level || 'INFO'}"`,
+      `"${l.event || ''}"`,
+      `"${(l.message || '').replace(/"/g, '""')}"`
+    ]);
+
+    const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `kea_logs_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const renderLevelBadge = (level) => {
+    const lvl = (level || 'INFO').toUpperCase();
+    switch (lvl) {
+      case 'ERROR':
+      case 'FATAL':
+      case 'CRIT':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
+            <AlertCircle size={11} /> {lvl}
+          </span>
+        );
+      case 'WARN':
+      case 'WARNING':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+            <AlertTriangle size={11} /> WARN
+          </span>
+        );
+      case 'DEBUG':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">
+            <Bug size={11} /> DEBUG
+          </span>
+        );
+      case 'INFO':
+      default:
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20">
+            <Info size={11} /> INFO
+          </span>
+        );
+    }
+  };
+
+  const renderServiceBadge = (svc) => {
+    const name = (svc || '').toLowerCase();
+    if (name.includes('dhcp4')) {
+      return (
+        <span className="inline-block px-2 py-0.5 rounded font-mono text-[11px] font-semibold bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 whitespace-nowrap">
+          kea-dhcp4
+        </span>
+      );
+    }
+    if (name.includes('ctrl') || name.includes('agent')) {
+      return (
+        <span className="inline-block px-2 py-0.5 rounded font-mono text-[11px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 whitespace-nowrap">
+          kea-ctrl-agent
+        </span>
+      );
+    }
+    return (
+      <span className="inline-block px-2 py-0.5 rounded font-mono text-[11px] font-medium bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-slate-400 whitespace-nowrap">
+        {name || 'system'}
+      </span>
+    );
+  };
+
+  const isFiltering = selectedService !== 'all' || selectedLevel !== 'all' || selectedCategory !== 'all' || Boolean(search);
 
   return (
     <div className="page-wrapper max-w-7xl mx-auto space-y-6">
@@ -48,93 +220,374 @@ export function ServiceLogs({ setNotification }) {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">
-            Logs
+            System & Service Logs
           </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-            Monitor live isc-dhcp-server journalctl daemon transaction logs
+          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
+            Structured real-time transaction events for Kea DHCPv4 Server and REST Control Agent
           </p>
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
           <button
-            className={`btn text-xs sm:text-sm ${autoRefresh ? 'bg-cyan-500 hover:bg-cyan-600 text-white shadow-sm shadow-cyan-500/25' : 'btn-secondary'}`}
+            className={`btn text-xs sm:text-sm ${
+              autoRefresh ? 'bg-cyan-500 hover:bg-cyan-600 text-white shadow-sm shadow-cyan-500/25' : 'btn-secondary'
+            }`}
             onClick={() => setAutoRefresh(!autoRefresh)}
+            title="Auto-refresh logs every 5 seconds"
           >
-            <Clock size={16} />
-            {autoRefresh ? 'Auto-Poll (6s): ON' : 'Auto-Poll'}
+            <Clock size={15} />
+            {autoRefresh ? 'Auto (5s): ON' : 'Auto-Poll'}
           </button>
+
+          <button
+            className="btn btn-secondary text-xs sm:text-sm"
+            onClick={exportCSV}
+            disabled={filteredLogs.length === 0}
+            title="Export filtered logs to CSV"
+          >
+            <Download size={15} />
+            Export CSV
+          </button>
+
           <button
             className="btn btn-secondary text-xs sm:text-sm"
             onClick={fetchLogs}
             disabled={loading}
           >
-            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+            <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
             Refresh
           </button>
         </div>
       </div>
 
-      {/* Logs Console Container */}
-      <div className="glass-card p-0 overflow-hidden flex flex-col border border-slate-200 dark:border-white/10">
-        <div className="p-3.5 sm:px-5 border-b border-slate-200 dark:border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-100/70 dark:bg-white/[0.03]">
-          <div className="flex items-center gap-2.5">
-            <Terminal size={18} className="text-cyan-500" />
-            <span className="font-semibold text-xs sm:text-sm text-slate-800 dark:text-slate-200">
-              Journalctl Output Stream
-            </span>
-            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-mono">
-              {filteredLogs.length} events
-            </span>
+      {/* Filter Toolbar (Dropdowns & Search Bar) */}
+      <div className="glass-card p-4 sm:p-5 space-y-3.5 border border-slate-200 dark:border-white/10">
+        <div className="flex items-center justify-between flex-wrap gap-2 pb-2 border-b border-slate-200/80 dark:border-white/10">
+          <div className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-300">
+            <Filter size={15} className="text-indigo-500" />
+            <span>Filter Controls</span>
+            {isFiltering && (
+              <span className="text-[11px] font-normal px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+                Active Filters
+              </span>
+            )}
           </div>
 
-          <div className="relative w-full sm:w-72">
-            <input
-              type="text"
-              className="input-text py-1.5 pl-8 pr-3 text-xs sm:text-sm w-full"
-              placeholder="Filter logs (e.g. DHCPACK)..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-            <Search
-              size={14}
-              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
-            />
+          <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+            <span>Showing <strong className="text-slate-800 dark:text-slate-200 font-mono">{filteredLogs.length}</strong> of <strong className="font-mono">{logs.length}</strong> events</span>
+            {isFiltering && (
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 text-xs text-indigo-600 dark:text-indigo-400 hover:underline font-semibold ml-2"
+                onClick={handleResetFilters}
+              >
+                <RotateCcw size={12} /> Reset Filters
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Log Lines Area */}
-        <div className="font-mono h-[520px] overflow-y-auto bg-slate-950 dark:bg-[#070a12] p-4 sm:p-5 text-xs sm:text-sm leading-relaxed select-text space-y-1">
-          {filteredLogs.map((log, index) => {
-            let textColorClass = 'text-slate-300';
-            if (log.message.includes('DHCPACK')) {
-              textColorClass = 'text-emerald-400 font-medium';
-            } else if (log.message.includes('DHCPOFFER')) {
-              textColorClass = 'text-cyan-400 font-medium';
-            } else if (log.message.includes('DHCPDISCOVER')) {
-              textColorClass = 'text-indigo-400';
-            } else if (log.message.includes('DHCPREQUEST')) {
-              textColorClass = 'text-amber-300';
-            } else if (log.message.includes('error') || log.message.includes('Failed')) {
-              textColorClass = 'text-rose-400 font-semibold';
-            }
+        {/* Dropdowns Row */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {/* 1. Service Filter Dropdown */}
+          <div className="space-y-1">
+            <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+              Service
+            </label>
+            <select
+              className="select-input text-xs py-2 w-full"
+              value={selectedService}
+              onChange={(e) => setSelectedService(e.target.value)}
+            >
+              <option value="all">All Services</option>
+              <option value="dhcp4">Kea DHCPv4 Server</option>
+              <option value="ctrl-agent">Kea Control Agent</option>
+              <option value="ui">Kea Web UI</option>
+            </select>
+          </div>
 
-            return (
-              <div key={index} className="flex items-start gap-3 hover:bg-white/[0.03] py-0.5 px-1 rounded transition-colors">
-                <span className="text-slate-500 flex-shrink-0 text-xs select-none">
-                  {log.timestamp}
-                </span>
-                <span className={textColorClass}>{log.message}</span>
-              </div>
-            );
-          })}
+          {/* 2. Severity Level Dropdown */}
+          <div className="space-y-1">
+            <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+              Severity Level
+            </label>
+            <select
+              className="select-input text-xs py-2 w-full"
+              value={selectedLevel}
+              onChange={(e) => setSelectedLevel(e.target.value)}
+            >
+              <option value="all">All Severity Levels</option>
+              <option value="INFO">INFO (Normal)</option>
+              <option value="WARN">WARN (Warning)</option>
+              <option value="ERROR">ERROR / FATAL</option>
+              <option value="DEBUG">DEBUG</option>
+            </select>
+          </div>
 
-          {filteredLogs.length === 0 && (
-            <div className="text-slate-500 text-center py-16">
-              No log messages matching filter
-            </div>
+          {/* 3. Event / Message Category Dropdown */}
+          <div className="space-y-1">
+            <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+              Event Category
+            </label>
+            <select
+              className="select-input text-xs py-2 w-full"
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+            >
+              {EVENT_CATEGORY_OPTIONS.map((cat) => (
+                <option key={cat.value} value={cat.value}>
+                  {cat.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* 4. Query Limit Dropdown */}
+          <div className="space-y-1">
+            <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+              Fetch Limit (Lines)
+            </label>
+            <select
+              className="select-input text-xs py-2 w-full"
+              value={limit}
+              onChange={(e) => setLimit(parseInt(e.target.value, 10))}
+            >
+              <option value={50}>50 Entries</option>
+              <option value={100}>100 Entries</option>
+              <option value={200}>200 Entries</option>
+              <option value={500}>500 Entries</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Free text search bar */}
+        <div className="relative w-full">
+          <input
+            type="text"
+            className="input-text py-2 pl-9 pr-8 text-xs sm:text-sm w-full"
+            placeholder="Search keyword across messages, event tags, timestamps, or client IPs..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <Search
+            size={16}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+          />
+          {search && (
+            <button
+              onClick={() => setSearch('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-white"
+            >
+              <X size={15} />
+            </button>
           )}
         </div>
       </div>
+
+      {/* Structured Logs Table */}
+      <div className="glass-card p-0 overflow-hidden shadow-sm border border-slate-200 dark:border-white/10">
+        <div className="table-container">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th className="text-center w-14">#</th>
+                <th className="w-44">Timestamp</th>
+                <th className="w-32">Service</th>
+                <th className="w-24">Level</th>
+                <th className="w-48">Event Tag</th>
+                <th>Message</th>
+                <th className="text-right w-24">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredLogs.map((log, index) => {
+                const isError = (log.level || '').toUpperCase() === 'ERROR';
+                const isWarn = (log.level || '').toUpperCase() === 'WARN';
+
+                return (
+                  <tr
+                    key={log.id || index}
+                    className={`transition-colors cursor-pointer hover:bg-slate-50/80 dark:hover:bg-white/[0.03] ${
+                      isError
+                        ? 'bg-rose-500/[0.03] dark:bg-rose-500/[0.05]'
+                        : isWarn
+                        ? 'bg-amber-500/[0.03] dark:bg-amber-500/[0.04]'
+                        : ''
+                    }`}
+                    onClick={() => setDetailLog(log)}
+                  >
+                    {/* Index */}
+                    <td className="text-center font-mono text-xs text-slate-400 select-none">
+                      {index + 1}
+                    </td>
+
+                    {/* Timestamp */}
+                    <td className="font-mono text-xs text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                      {log.timestamp}
+                    </td>
+
+                    {/* Service */}
+                    <td>
+                      {renderServiceBadge(log.service)}
+                    </td>
+
+                    {/* Level */}
+                    <td>
+                      {renderLevelBadge(log.level)}
+                    </td>
+
+                    {/* Event Tag */}
+                    <td>
+                      <span className="font-mono text-xs font-semibold text-slate-700 dark:text-slate-300 px-1.5 py-0.5 rounded bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10">
+                        {log.event || 'LOG'}
+                      </span>
+                    </td>
+
+                    {/* Message */}
+                    <td className="font-mono text-xs leading-relaxed text-slate-800 dark:text-slate-200 break-words max-w-xl">
+                      <span className={isError ? 'text-rose-500 font-medium' : isWarn ? 'text-amber-500' : ''}>
+                        {log.message}
+                      </span>
+                    </td>
+
+                    {/* Actions */}
+                    <td className="text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                      <div className="inline-flex items-center gap-1">
+                        <button
+                          type="button"
+                          className="btn-icon"
+                          onClick={() => handleCopy(log)}
+                          title="Copy message"
+                        >
+                          {copiedId === log.id ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-icon"
+                          onClick={() => setDetailLog(log)}
+                          title="View Full Details"
+                        >
+                          <Eye size={14} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+
+              {filteredLogs.length === 0 && !loading && (
+                <tr>
+                  <td colSpan={7} className="text-center py-16 text-slate-500 dark:text-slate-400">
+                    <div className="flex flex-col items-center gap-2.5">
+                      <Terminal size={36} className="text-slate-400 opacity-60" />
+                      <span className="font-semibold text-sm">
+                        {isFiltering ? 'No logs match the current filter criteria' : 'No log entries available'}
+                      </span>
+                      {isFiltering && (
+                        <button
+                          type="button"
+                          className="btn btn-secondary text-xs mt-1"
+                          onClick={handleResetFilters}
+                        >
+                          Clear All Filters
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Log Detail Modal */}
+      {detailLog && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 transition-opacity animate-in fade-in"
+          onClick={() => setDetailLog(null)}
+        >
+          <div
+            className="glass-card max-w-2xl w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-white/10">
+              <div className="flex items-center gap-2.5">
+                <Terminal size={20} className="text-indigo-500" />
+                <h3 className="font-bold text-base text-slate-900 dark:text-white">
+                  Log Entry Inspector
+                </h3>
+              </div>
+              <button
+                type="button"
+                className="btn-icon"
+                onClick={() => setDetailLog(null)}
+                aria-label="Close"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+              <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10">
+                <span className="text-slate-400 block text-[10px] uppercase font-bold mb-0.5">Service</span>
+                {renderServiceBadge(detailLog.service)}
+              </div>
+              <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10">
+                <span className="text-slate-400 block text-[10px] uppercase font-bold mb-0.5">Severity</span>
+                {renderLevelBadge(detailLog.level)}
+              </div>
+              <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 sm:col-span-2">
+                <span className="text-slate-400 block text-[10px] uppercase font-bold mb-0.5">Timestamp</span>
+                <span className="font-mono text-slate-800 dark:text-slate-200 font-semibold">{detailLog.timestamp}</span>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Event Tag</span>
+              <div className="p-2 rounded bg-slate-100 dark:bg-white/5 font-mono text-xs font-bold text-indigo-600 dark:text-indigo-400">
+                {detailLog.event || 'N/A'}
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Decoded Message</span>
+              <div className="p-3 rounded-lg bg-slate-900 text-slate-100 font-mono text-xs leading-relaxed break-words select-text">
+                {detailLog.message}
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Raw Syslog Record</span>
+                <button
+                  type="button"
+                  className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
+                  onClick={() => {
+                    navigator.clipboard.writeText(detailLog.raw || detailLog.message);
+                    if (setNotification) setNotification({ type: 'success', message: 'Raw log copied' });
+                  }}
+                >
+                  <Copy size={12} /> Copy Raw
+                </button>
+              </div>
+              <div className="p-3 rounded-lg bg-slate-950 text-slate-400 font-mono text-[11px] leading-relaxed break-words select-text border border-white/5">
+                {detailLog.raw || detailLog.message}
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                className="btn btn-secondary text-xs sm:text-sm"
+                onClick={() => setDetailLog(null)}
+              >
+                Close Inspector
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

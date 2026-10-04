@@ -4,19 +4,19 @@ const authMiddleware = require('../middleware/auth');
 const dhcpConfigService = require('../services/dhcpConfigService');
 
 // GET /api/scopes
-router.get('/', authMiddleware, (req, res) => {
+router.get('/', authMiddleware, async (req, res) => {
   try {
-    const subnets = dhcpConfigService.getSubnets();
+    const subnets = await dhcpConfigService.getSubnets();
     res.json(subnets);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// GET /api/scopes/:id (by numeric id or subnet IP)
-router.get('/:id', authMiddleware, (req, res) => {
+// GET /api/scopes/:id
+router.get('/:id', authMiddleware, async (req, res) => {
   try {
-    const subnet = dhcpConfigService.getSubnetById(req.params.id);
+    const subnet = await dhcpConfigService.getSubnetById(req.params.id);
     if (!subnet) {
       return res.status(404).json({ error: `Scope '${req.params.id}' not found` });
     }
@@ -27,38 +27,21 @@ router.get('/:id', authMiddleware, (req, res) => {
 });
 
 // POST /api/scopes
-router.post('/', authMiddleware, (req, res) => {
+router.post('/', authMiddleware, async (req, res) => {
   const { name, subnet, netmask, rangeStart, rangeEnd, routers, domainNameServers, domainName, defaultLeaseTime, disabled } = req.body;
-  if (!name || !String(name).trim()) {
-    return res.status(400).json({ error: 'Scope name is required' });
-  }
-  if (!subnet || !netmask) {
-    return res.status(400).json({ error: 'Subnet and netmask are required' });
-  }
-
-  // Validate IP formats
-  const ipRegex = /^([0-9]{1,3}\.){3}[0-9]{1,3}$/;
-  if (!ipRegex.test(subnet) || !ipRegex.test(netmask)) {
-    return res.status(400).json({ error: 'Invalid IP format for subnet or netmask' });
-  }
-
-  if (rangeStart && !ipRegex.test(rangeStart)) {
-    return res.status(400).json({ error: 'Invalid range start IP' });
-  }
-  if (rangeEnd && !ipRegex.test(rangeEnd)) {
-    return res.status(400).json({ error: 'Invalid range end IP' });
+  if (!subnet) {
+    return res.status(400).json({ error: 'Subnet CIDR or network IP is required' });
   }
 
   try {
-    const created = dhcpConfigService.createSubnet({
-      name: String(name).trim(),
+    const created = await dhcpConfigService.createSubnet({
+      name: String(name || '').trim(),
       subnet,
       netmask,
       disabled: Boolean(disabled),
       rangeStart: rangeStart || '',
       rangeEnd: rangeEnd || '',
       routers: routers || '',
-      subnetMask: netmask,
       domainNameServers: domainNameServers || '',
       domainName: domainName || '',
       defaultLeaseTime: defaultLeaseTime ? parseInt(defaultLeaseTime, 10) : '',
@@ -70,34 +53,90 @@ router.post('/', authMiddleware, (req, res) => {
   }
 });
 
-// PATCH /api/scopes/:id/toggle (toggle disabled/enabled)
-router.patch('/:id/toggle', authMiddleware, (req, res) => {
+// PATCH /api/scopes/:id/toggle
+router.patch('/:id/toggle', authMiddleware, async (req, res) => {
   try {
-    const updated = dhcpConfigService.toggleSubnetDisabled(req.params.id);
+    const updated = await dhcpConfigService.toggleSubnetDisabled(req.params.id);
     res.json(updated);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 });
 
-// PUT /api/scopes/:id (by numeric id or subnet IP)
-router.put('/:id', authMiddleware, (req, res) => {
-  if (!req.body.name || !String(req.body.name).trim()) {
-    return res.status(400).json({ error: 'Scope name is required' });
-  }
-  req.body.name = String(req.body.name).trim();
+// PUT /api/scopes/:id
+router.put('/:id', authMiddleware, async (req, res) => {
   try {
-    const updated = dhcpConfigService.updateSubnet(req.params.id, req.body);
+    const updated = await dhcpConfigService.updateSubnet(req.params.id, req.body);
     res.json(updated);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 });
 
-// DELETE /api/scopes/:id (by numeric id or subnet IP)
-router.delete('/:id', authMiddleware, (req, res) => {
+// DELETE /api/scopes/:id
+router.delete('/:id', authMiddleware, async (req, res) => {
   try {
-    const result = dhcpConfigService.deleteSubnet(req.params.id);
+    const result = await dhcpConfigService.deleteSubnet(req.params.id);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// --- Scope Reservations (Static Hosts) Endpoints ---
+
+// POST /api/scopes/:id/reservations
+router.post('/:id/reservations', authMiddleware, async (req, res) => {
+  const { hwAddress, mac, ipAddress, ip, hostname, name } = req.body;
+  const targetMac = hwAddress || mac;
+  const targetIp = ipAddress || ip;
+  const targetHost = hostname || name;
+
+  if (!targetMac || !targetIp) {
+    return res.status(400).json({ error: 'MAC address and IP address are required' });
+  }
+
+  // MAC validation
+  const macRegex = /^([0-9a-fA-F]{2}[:-]){5}([0-9a-fA-F]{2})$/;
+  if (!macRegex.test(targetMac)) {
+    return res.status(400).json({ error: 'Invalid MAC address format (expected XX:XX:XX:XX:XX:XX)' });
+  }
+
+  try {
+    const created = await dhcpConfigService.addReservation(req.params.id, {
+      hwAddress: targetMac,
+      ipAddress: targetIp,
+      hostname: targetHost || ''
+    });
+    res.status(201).json(created);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// PUT /api/scopes/:id/reservations/:hwAddress
+router.put('/:id/reservations/:hwAddress', authMiddleware, async (req, res) => {
+  const { hwAddress, mac, ipAddress, ip, hostname, name } = req.body;
+  const newMac = hwAddress || mac;
+  const newIp = ipAddress || ip;
+  const newHost = hostname !== undefined ? hostname : name;
+
+  try {
+    const updated = await dhcpConfigService.updateReservation(req.params.id, req.params.hwAddress, {
+      hwAddress: newMac,
+      ipAddress: newIp,
+      hostname: newHost
+    });
+    res.json(updated);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// DELETE /api/scopes/:id/reservations/:hwAddress
+router.delete('/:id/reservations/:hwAddress', authMiddleware, async (req, res) => {
+  try {
+    const result = await dhcpConfigService.deleteReservation(req.params.id, req.params.hwAddress);
     res.json(result);
   } catch (err) {
     res.status(400).json({ error: err.message });

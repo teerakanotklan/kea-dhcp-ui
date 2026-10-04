@@ -29,7 +29,11 @@ app.use('/api/service', serviceRoutes);
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
-    service: config.serviceName,
+    services: {
+      dhcp4: config.dhcpService,
+      ctrlAgent: config.ctrlAgentService
+    },
+    keaCtrlAgentUrl: config.keaCtrlAgentUrl,
     time: new Date().toISOString()
   });
 });
@@ -53,14 +57,11 @@ app.use((err, req, res, next) => {
 
 app.listen(config.port, () => {
   console.log(`===============================================`);
-  console.log(`ISC DHCP Server Web Management Service`);
-  console.log(`URL:         http://localhost:${config.port}`);
-  console.log(`Service:     ${config.serviceName}`);
-  console.log(`Config:      ${config.confPath}`);
-  console.log(`Leases:      ${config.leasesPath}`);
-  if (config.interfacesPath) {
-    console.log(`Interfaces:  ${config.interfacesPath}`);
-  }
-  console.log(`Backups:     ${config.backupDir}`);
+  console.log(`Kea DHCP Server Web Management Service`);
+  console.log(`URL:              http://localhost:${config.port}`);
+  console.log(`DHCPv4 Service:   ${config.dhcpService}`);
+  console.log(`Control Agent:    ${config.ctrlAgentService} (${config.keaCtrlAgentUrl})`);
+  console.log(`Kea Config:       ${config.confPath}`);
+  console.log(`Backups:          ${config.backupDir}`);
   console.log(`===============================================`);
 });

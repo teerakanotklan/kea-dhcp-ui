@@ -1,16 +1,52 @@
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 const config = require('../config/default');
-const backupService = require('./backupService');
+const keaService = require('./keaService');
 
-function calculateBroadcastAddress(subnet, netmask) {
-  if (!subnet || !netmask) return '';
-  const netParts = subnet.split('.').map(Number);
-  const maskParts = netmask.split('.').map(Number);
-  if (netParts.length !== 4 || maskParts.length !== 4) return '';
-  if (netParts.some(p => isNaN(p) || p < 0 || p > 255) || maskParts.some(p => isNaN(p) || p < 0 || p > 255)) return '';
-  return netParts.map((part, i) => (part | (~maskParts[i] & 255)) >>> 0).join('.');
+function maskToCidr(mask) {
+  if (!mask) return 24;
+  if (typeof mask === 'number') return mask;
+  if (/^\d+$/.test(mask)) return parseInt(mask, 10);
+  const parts = mask.split('.').map(Number);
+  if (parts.length !== 4) return 24;
+  let count = 0;
+  for (const part of parts) {
+    count += (part >>> 0).toString(2).split('1').length - 1;
+  }
+  return count;
+}
+
+function cidrToMask(cidr) {
+  const c = parseInt(cidr, 10) || 24;
+  const mask = [];
+  for (let i = 0; i < 4; i++) {
+    const bits = Math.min(Math.max(c - i * 8, 0), 8);
+    mask.push(256 - Math.pow(2, 8 - bits));
+  }
+  return mask.join('.');
+}
+
+function parseSubnetCidr(subnetStr, netmaskStr) {
+  if (!subnetStr) return { subnet: '0.0.0.0/24', baseIp: '0.0.0.0', netmask: '255.255.255.0', cidr: 24 };
+
+  if (subnetStr.includes('/')) {
+    const [baseIp, cidrStr] = subnetStr.split('/');
+    const cidr = parseInt(cidrStr, 10) || 24;
+    return {
+      subnet: `${baseIp}/${cidr}`,
+      baseIp,
+      netmask: cidrToMask(cidr),
+      cidr
+    };
+  }
+
+  const cidr = maskToCidr(netmaskStr);
+  return {
+    subnet: `${subnetStr}/${cidr}`,
+    baseIp: subnetStr,
+    netmask: netmaskStr || cidrToMask(cidr),
+    cidr
+  };
 }
 
 class DhcpConfigService {
@@ -18,594 +54,421 @@ class DhcpConfigService {
     this.confPath = config.confPath;
   }
 
-  getRawConfig() {
-    if (!fs.existsSync(this.confPath)) {
-      return '';
+  async getRawConfig() {
+    try {
+      const keaConfig = await keaService.getConfig();
+      return JSON.stringify({ Dhcp4: keaConfig }, null, 2);
+    } catch (e) {
+      if (fs.existsSync(this.confPath)) {
+        return fs.readFileSync(this.confPath, 'utf8');
+      }
+      return '{}';
     }
-    return fs.readFileSync(this.confPath, 'utf8');
   }
 
-  saveRawConfig(content, comment = 'Manual edit via Web UI') {
-    // Validate syntax first
-    const validation = this.validateSyntax(content);
-    if (!validation.valid) {
-      throw new Error(`Syntax Error: ${validation.error}`);
+  async saveRawConfig(content, comment = 'Manual edit via Web UI') {
+    let parsed;
+    try {
+      parsed = JSON.parse(content);
+    } catch (e) {
+      throw new Error(`JSON Syntax Error: ${e.message}`);
     }
 
-    // Auto backup current config before writing
-    if (fs.existsSync(this.confPath)) {
-      backupService.createBackup(this.confPath, comment);
-    }
-
-    fs.writeFileSync(this.confPath, content, 'utf8');
-    return { success: true, message: 'Configuration saved successfully' };
+    const dhcp4Config = parsed.Dhcp4 || parsed;
+    return await keaService.setConfig(dhcp4Config, comment);
   }
 
   validateSyntax(content) {
-    // Basic balanced braces and line termination checks
-    let openBraces = 0;
-    const lines = content.split('\n');
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].replace(/#.*$/, '').trim(); // Remove comments
-      if (!line) continue;
-
-      for (const ch of line) {
-        if (ch === '{') openBraces++;
-        if (ch === '}') openBraces--;
+    try {
+      const parsed = JSON.parse(content);
+      const dhcp4 = parsed.Dhcp4 || parsed;
+      if (!dhcp4 || typeof dhcp4 !== 'object') {
+        return { valid: false, error: 'Configuration must contain a valid Dhcp4 JSON object' };
       }
-      if (openBraces < 0) {
-        return { valid: false, error: `Unexpected closing brace '}' at line ${i + 1}` };
-      }
+      return { valid: true };
+    } catch (e) {
+      return { valid: false, error: `Invalid JSON format: ${e.message}` };
     }
-
-    if (openBraces !== 0) {
-      return { valid: false, error: `Unclosed block! Missing ${openBraces} closing brace '}'` };
-    }
-
-    // Check host declarations have hardware ethernet and fixed-address
-    const hostMatches = content.match(/host\s+[\w-]+\s*\{[^}]*\}/g) || [];
-    for (const hostBlock of hostMatches) {
-      if (!/hardware\s+ethernet\s+([0-9a-fA-F]{2}[:-]){5}([0-9a-fA-F]{2})/i.test(hostBlock)) {
-        return { valid: false, error: `Host declaration missing valid 'hardware ethernet xx:xx:xx:xx:xx:xx': ${hostBlock.slice(0, 30)}...` };
-      }
-      if (!/fixed-address\s+([0-9]{1,3}\.){3}[0-9]{1,3}/i.test(hostBlock)) {
-        return { valid: false, error: `Host declaration missing valid 'fixed-address ip': ${hostBlock.slice(0, 30)}...` };
-      }
-    }
-
-    return { valid: true };
   }
 
-  // Parse structured data from config
-  parseConfig() {
-    const raw = this.getRawConfig();
-    const result = {
-      global: {},
-      subnets: [],
-      hosts: [],
-      raw
-    };
+  async parseConfig() {
+    const dhcp4 = await keaService.getConfig();
+    const raw = JSON.stringify({ Dhcp4: dhcp4 }, null, 2);
 
-    // Parse Global options
-    const globalLeaseMatch = raw.match(/default-lease-time\s+(\d+);/);
-    if (globalLeaseMatch) result.global.defaultLeaseTime = parseInt(globalLeaseMatch[1], 10);
+    const subnets = (dhcp4.subnet4 || []).map((s) => {
+      const { baseIp, netmask, cidr } = parseSubnetCidr(s.subnet);
+      let rangeStart = '';
+      let rangeEnd = '';
+      if (s.pools && s.pools.length > 0) {
+        const poolStr = s.pools[0].pool || '';
+        const parts = poolStr.split(/\s*-\s*/);
+        rangeStart = parts[0] || '';
+        rangeEnd = parts[1] || '';
+      }
 
-    const maxLeaseMatch = raw.match(/max-lease-time\s+(\d+);/);
-    if (maxLeaseMatch) result.global.maxLeaseTime = parseInt(maxLeaseMatch[1], 10);
+      const routersOpt = (s['option-data'] || []).find((o) => o.name === 'routers');
+      const dnsOpt = (s['option-data'] || []).find((o) => o.name === 'domain-name-servers');
+      const domainOpt = (s['option-data'] || []).find((o) => o.name === 'domain-name');
 
-    result.global.authoritative = /authoritative\s*;/.test(raw);
-    const ddnsMatch = raw.match(/ddns-update-style\s+([\w-]+);/);
-    if (ddnsMatch) result.global.ddnsUpdateStyle = ddnsMatch[1];
+      const reservations = (s.reservations || []).map((r, idx) => ({
+        id: `${s.id || s.subnet}-${r['hw-address'] || idx}`,
+        subnetId: s.id,
+        name: r.hostname || `Host-${idx + 1}`,
+        hostname: r.hostname || '',
+        mac: r['hw-address'] || '',
+        ip: r['ip-address'] || '',
+        description: r.comments || ''
+      }));
 
-    const logMatch = raw.match(/log-facility\s+([\w-]+);/);
-    if (logMatch) result.global.logFacility = logMatch[1];
-
-    const domainMatch = raw.match(/option\s+domain-name\s+"([^"]+)";/);
-    if (domainMatch) result.global.domainName = domainMatch[1];
-
-    const dnsMatch = raw.match(/option\s+domain-name-servers\s+([^;]+);/);
-    if (dnsMatch) result.global.domainNameServers = dnsMatch[1];
-
-    // Parse Subnets
-    // regex matching: subnet <ip> netmask <mask> { <body> }
-    const subnetRegex = /subnet\s+([0-9.]+)\s+netmask\s+([0-9.]+)\s*\{([^}]*)\}/g;
-    let match;
-    let scopeIndex = 1;
-    while ((match = subnetRegex.exec(raw)) !== null) {
-      const net = match[1];
-      const netmask = match[2];
-      const body = match[3];
-
-      const isDisabled = /#\s*@scope-disabled/i.test(body) ||
-                         /ignore\s+booting\s*;/i.test(body) ||
-                         /deny\s+booting\s*;/i.test(body);
-
-      const subnetObj = {
-        id: scopeIndex++,
-        name: '',
-        subnet: net,
-        netmask: netmask,
-        disabled: isDisabled,
-        rangeStart: '',
-        rangeEnd: '',
-        routers: '',
-        subnetMask: '',
-        broadcastAddress: '',
-        domainNameServers: '',
-        domainName: '',
-        defaultLeaseTime: '',
-        maxLeaseTime: ''
+      return {
+        id: s.id || s.subnet,
+        name: s.comment || `Scope ${s.subnet}`,
+        subnet: baseIp,
+        subnetCidr: s.subnet,
+        netmask,
+        cidr,
+        rangeStart,
+        rangeEnd,
+        routers: routersOpt ? routersOpt.data : '',
+        domainNameServers: dnsOpt ? dnsOpt.data : '',
+        domainName: domainOpt ? domainOpt.data : '',
+        defaultLeaseTime: s['valid-lifetime'] || dhcp4['valid-lifetime'] || 4000,
+        disabled: Boolean(s['user-context']?.disabled || s._disabled),
+        reservations
       };
-
-      const nameMatch = body.match(/#\s*@scope-name:[ \t]*(.+)$/m);
-      if (nameMatch) subnetObj.name = nameMatch[1].trim();
-
-      const rangeMatch = body.match(/range\s+([0-9.]+)\s+([0-9.]+);/);
-      if (rangeMatch) {
-        subnetObj.rangeStart = rangeMatch[1];
-        subnetObj.rangeEnd = rangeMatch[2];
-      }
-
-      const routersMatch = body.match(/option\s+routers\s+([0-9.,\s]+);/);
-      if (routersMatch) subnetObj.routers = routersMatch[1].trim();
-
-      const maskOptionMatch = body.match(/option\s+subnet-mask\s+([0-9.]+);/);
-      if (maskOptionMatch) subnetObj.subnetMask = maskOptionMatch[1].trim();
-
-      const broadcastMatch = body.match(/option\s+broadcast-address\s+([0-9.]+);/);
-      if (broadcastMatch) subnetObj.broadcastAddress = broadcastMatch[1].trim();
-
-      const dnsMatch = body.match(/option\s+domain-name-servers\s+([^;]+);/);
-      if (dnsMatch) subnetObj.domainNameServers = dnsMatch[1].trim();
-
-      const domainMatch = body.match(/option\s+domain-name\s+"([^"]+)";/);
-      if (domainMatch) subnetObj.domainName = domainMatch[1].trim();
-
-      const dLeaseMatch = body.match(/default-lease-time\s+(\d+);/);
-      if (dLeaseMatch) subnetObj.defaultLeaseTime = parseInt(dLeaseMatch[1], 10);
-
-      const mLeaseMatch = body.match(/max-lease-time\s+(\d+);/);
-      if (mLeaseMatch) subnetObj.maxLeaseTime = parseInt(mLeaseMatch[1], 10);
-
-      // Parse Additional / Custom DHCP Options
-      const standardOptionNames = new Set([
-        'routers',
-        'subnet-mask',
-        'broadcast-address',
-        'domain-name-servers',
-        'domain-name'
-      ]);
-
-      subnetObj.customOptions = [];
-
-      // Extract all option <name> <value>; statements
-      const optionRegex = /option\s+([\w-]+)\s+([^;]+);/g;
-      let optMatch;
-      while ((optMatch = optionRegex.exec(body)) !== null) {
-        const optName = optMatch[1].trim();
-        const optValue = optMatch[2].trim();
-        if (!standardOptionNames.has(optName)) {
-          subnetObj.customOptions.push({
-            name: optName,
-            value: optValue
-          });
-        }
-      }
-
-      // Also extract next-server directive if present
-      const nextServerMatch = body.match(/next-server\s+([^;]+);/);
-      if (nextServerMatch) {
-        subnetObj.customOptions.push({
-          name: 'next-server',
-          value: nextServerMatch[1].trim()
-        });
-      }
-
-      result.subnets.push(subnetObj);
-    }
-
-    // Parse Static Hosts
-    // regex matching: host <name> { <body> }
-    const hostRegex = /host\s+([\w\.-]+)\s*\{([^}]*)\}/g;
-    let hostIndex = 1;
-    while ((match = hostRegex.exec(raw)) !== null) {
-      const name = match[1];
-      const body = match[2];
-
-      const macMatch = body.match(/hardware\s+ethernet\s+([0-9a-fA-F:]{17});/i);
-      const ipMatch = body.match(/fixed-address\s+([0-9.]+);/);
-      const descMatch = body.match(/#\s*description:\s*(.+)$/m);
-
-      if (macMatch && ipMatch) {
-        result.hosts.push({
-          id: hostIndex++,
-          name: name,
-          mac: macMatch[1].toLowerCase(),
-          ip: ipMatch[1],
-          description: descMatch ? descMatch[1].trim() : ''
-        });
-      }
-    }
-
-    return result;
-  }
-
-  // --- Subnet CRUD ---
-  getSubnets() {
-    return this.parseConfig().subnets;
-  }
-
-  saveSubnets(subnets) {
-    let raw = this.getRawConfig();
-
-    // Remove all existing subnet blocks
-    raw = raw.replace(/\n*subnet\s+[0-9.]+\s+netmask\s+[0-9.]+\s*\{[^}]*\}\n*/g, '\n');
-
-    // Generate new subnet blocks
-    let newBlocks = '\n';
-    for (const sub of subnets) {
-      newBlocks += `subnet ${sub.subnet} netmask ${sub.netmask} {\n`;
-      if (sub.name) {
-        newBlocks += `  # @scope-name: ${String(sub.name).replace(/[\r\n}]+/g, ' ').trim()}\n`;
-      }
-      if (sub.disabled) {
-        newBlocks += `  # @scope-disabled: true\n`;
-        newBlocks += `  ignore booting;\n`;
-      }
-      if (sub.rangeStart && sub.rangeEnd) {
-        newBlocks += `  range ${sub.rangeStart} ${sub.rangeEnd};\n`;
-      }
-      if (sub.routers) {
-        newBlocks += `  option routers ${sub.routers};\n`;
-      }
-      if (sub.subnetMask || sub.netmask) {
-        newBlocks += `  option subnet-mask ${sub.subnetMask || sub.netmask};\n`;
-      }
-      const broadcastAddr = calculateBroadcastAddress(sub.subnet, sub.netmask || sub.subnetMask) || sub.broadcastAddress;
-      if (broadcastAddr) {
-        newBlocks += `  option broadcast-address ${broadcastAddr};\n`;
-      }
-      if (sub.domainNameServers) {
-        newBlocks += `  option domain-name-servers ${sub.domainNameServers};\n`;
-      }
-      if (sub.domainName) {
-        newBlocks += `  option domain-name "${sub.domainName}";\n`;
-      }
-      if (sub.defaultLeaseTime) {
-        newBlocks += `  default-lease-time ${sub.defaultLeaseTime};\n`;
-      }
-
-      if (Array.isArray(sub.customOptions)) {
-        for (const opt of sub.customOptions) {
-          if (opt && opt.name && opt.value !== undefined && opt.value !== '') {
-            const cleanName = opt.name.trim();
-            const cleanVal = opt.value.trim();
-            if (cleanName === 'next-server') {
-              newBlocks += `  next-server ${cleanVal};\n`;
-            } else {
-              newBlocks += `  option ${cleanName} ${cleanVal};\n`;
-            }
-          }
-        }
-      }
-      newBlocks += `}\n\n`;
-    }
-
-    // Insert before host blocks or append
-    const hostIdx = raw.search(/host\s+[\w\.-]+\s*\{/);
-    if (hostIdx !== -1) {
-      raw = raw.slice(0, hostIdx) + newBlocks + raw.slice(hostIdx);
-    } else {
-      raw = raw + newBlocks;
-    }
-
-    this.saveRawConfig(raw.trim() + '\n', 'Subnet configuration updated');
-  }
-
-  createSubnet(data) {
-    const subnets = this.getSubnets();
-    if (subnets.some(s => s.subnet === data.subnet)) {
-      throw new Error(`Scope ${data.subnet} already exists`);
-    }
-    const newSubnet = { ...data, disabled: Boolean(data.disabled) };
-    subnets.push(newSubnet);
-    this.saveSubnets(subnets);
-    return newSubnet;
-  }
-
-  getSubnetById(idOrSubnet) {
-    const subnets = this.getSubnets();
-    return subnets.find(s => String(s.id) === String(idOrSubnet) || s.subnet === idOrSubnet) || null;
-  }
-
-  updateSubnet(idOrSubnet, data) {
-    const subnets = this.getSubnets();
-    const index = subnets.findIndex(s => String(s.id) === String(idOrSubnet) || s.subnet === idOrSubnet);
-    if (index === -1) {
-      throw new Error(`Scope ${idOrSubnet} not found`);
-    }
-    if (data.subnet && data.subnet !== subnets[index].subnet) {
-      if (subnets.some((s, idx) => idx !== index && s.subnet === data.subnet)) {
-        throw new Error(`Scope ${data.subnet} already exists`);
-      }
-    }
-    subnets[index] = { ...subnets[index], ...data, id: subnets[index].id };
-    this.saveSubnets(subnets);
-    return subnets[index];
-  }
-
-  deleteSubnet(idOrSubnet) {
-    const subnets = this.getSubnets();
-    const filtered = subnets.filter(s => String(s.id) !== String(idOrSubnet) && s.subnet !== idOrSubnet);
-    if (filtered.length === subnets.length) {
-      throw new Error(`Scope ${idOrSubnet} not found`);
-    }
-    this.saveSubnets(filtered);
-    return { success: true };
-  }
-
-  toggleSubnetDisabled(idOrSubnet) {
-    const subnets = this.getSubnets();
-    const index = subnets.findIndex(s => String(s.id) === String(idOrSubnet) || s.subnet === idOrSubnet);
-    if (index === -1) {
-      throw new Error(`Scope ${idOrSubnet} not found`);
-    }
-    subnets[index].disabled = !subnets[index].disabled;
-    this.saveSubnets(subnets);
-    return subnets[index];
-  }
-
-  // --- Static Host CRUD ---
-  getStaticHosts() {
-    return this.parseConfig().hosts;
-  }
-
-  getHostById(idOrName) {
-    const hosts = this.getStaticHosts();
-    return hosts.find(h => String(h.id) === String(idOrName) || h.name === idOrName) || null;
-  }
-
-  saveStaticHosts(hosts) {
-    let raw = this.getRawConfig();
-
-    // Remove all existing host blocks
-    raw = raw.replace(/\n*host\s+[\w\.-]+\s*\{[^}]*\}\n*/g, '\n');
-
-    // Generate new host blocks
-    let newBlocks = '\n# Static IP Reservations (Hosts)\n';
-    for (const h of hosts) {
-      newBlocks += `host ${h.name} {\n`;
-      if (h.description) {
-        newBlocks += `  # description: ${h.description}\n`;
-      }
-      newBlocks += `  hardware ethernet ${h.mac.toLowerCase()};\n`;
-      newBlocks += `  fixed-address ${h.ip};\n`;
-      newBlocks += `}\n\n`;
-    }
-
-    raw = raw.trim() + '\n' + newBlocks;
-    this.saveRawConfig(raw.trim() + '\n', 'Static hosts updated');
-  }
-
-  createStaticHost(data) {
-    const hosts = this.getStaticHosts();
-    const normalizedMac = data.mac.toLowerCase();
-
-    if (hosts.some(h => h.name.toLowerCase() === data.name.toLowerCase())) {
-      throw new Error(`Host with name '${data.name}' already exists`);
-    }
-    if (hosts.some(h => h.mac.toLowerCase() === normalizedMac)) {
-      throw new Error(`Host with MAC address '${data.mac}' already exists`);
-    }
-    if (hosts.some(h => h.ip === data.ip)) {
-      throw new Error(`IP address '${data.ip}' is already assigned to host '${hosts.find(h => h.ip === data.ip).name}'`);
-    }
-
-    hosts.push({
-      name: data.name,
-      mac: normalizedMac,
-      ip: data.ip,
-      description: data.description || ''
     });
 
-    this.saveStaticHosts(hosts);
-    return data;
+    const allHosts = subnets.flatMap((s) => s.reservations);
+
+    return {
+      global: {
+        defaultLeaseTime: dhcp4['valid-lifetime'] || 4000,
+        renewTimer: dhcp4['renew-timer'] || 1000,
+        rebindTimer: dhcp4['rebind-timer'] || 2000,
+        authoritative: Boolean(dhcp4.authoritative)
+      },
+      subnets,
+      hosts: allHosts,
+      raw
+    };
   }
 
-  updateStaticHost(idOrName, data) {
-    const hosts = this.getStaticHosts();
-    const index = hosts.findIndex(h => String(h.id) === String(idOrName) || h.name === idOrName);
-    if (index === -1) {
-      throw new Error(`Host '${idOrName}' not found`);
+  async getSubnets() {
+    const configData = await this.parseConfig();
+    return configData.subnets;
+  }
+
+  async getSubnetById(id) {
+    const subnets = await this.getSubnets();
+    const strId = String(id);
+    return subnets.find((s) => String(s.id) === strId || s.subnet === strId || s.subnetCidr === strId);
+  }
+
+  async createSubnet(data) {
+    const dhcp4 = await keaService.getConfig();
+    if (!dhcp4.subnet4) {
+      dhcp4.subnet4 = [];
     }
 
-    const normalizedMac = data.mac.toLowerCase();
-    // Verify no collisions with other hosts
-    for (let i = 0; i < hosts.length; i++) {
-      if (i !== index) {
-        if (hosts[i].mac.toLowerCase() === normalizedMac) {
-          throw new Error(`MAC '${data.mac}' is already used by '${hosts[i].name}'`);
-        }
-        if (hosts[i].ip === data.ip) {
-          throw new Error(`IP '${data.ip}' is already used by '${hosts[i].name}'`);
-        }
-      }
+    const maxId = dhcp4.subnet4.reduce((max, s) => Math.max(max, parseInt(s.id, 10) || 0), 0);
+    const newId = maxId + 1;
+
+    const { subnet: cidrString, baseIp } = parseSubnetCidr(data.subnet, data.netmask);
+
+    // Build pools
+    const pools = [];
+    if (data.rangeStart && data.rangeEnd) {
+      pools.push({ pool: `${data.rangeStart} - ${data.rangeEnd}` });
     }
 
-    hosts[index] = {
-      name: data.name || hosts[index].name,
-      mac: normalizedMac,
-      ip: data.ip,
-      description: data.description !== undefined ? data.description : hosts[index].description
+    // Build option-data
+    const optionData = [];
+    if (data.routers) {
+      optionData.push({ name: 'routers', data: data.routers });
+    }
+    if (data.domainNameServers) {
+      optionData.push({ name: 'domain-name-servers', data: data.domainNameServers });
+    }
+    if (data.domainName) {
+      optionData.push({ name: 'domain-name', data: data.domainName });
+    }
+
+    // Custom options
+    if (Array.isArray(data.customOptions)) {
+      data.customOptions.forEach((opt) => {
+        if (opt.name && opt.data) {
+          optionData.push({ name: opt.name, data: opt.data });
+        }
+      });
+    }
+
+    const newSubnet = {
+      id: newId,
+      subnet: cidrString,
+      comment: data.name || `Scope ${cidrString}`,
+      pools,
+      'option-data': optionData,
+      reservations: []
     };
 
-    this.saveStaticHosts(hosts);
-    return hosts[index];
-  }
-
-  deleteStaticHost(idOrName) {
-    const hosts = this.getStaticHosts();
-    const filtered = hosts.filter(h => String(h.id) !== String(idOrName) && h.name !== idOrName);
-    if (filtered.length === hosts.length) {
-      throw new Error(`Host '${idOrName}' not found`);
+    if (data.defaultLeaseTime) {
+      newSubnet['valid-lifetime'] = parseInt(data.defaultLeaseTime, 10);
     }
-    this.saveStaticHosts(filtered);
-    return { success: true };
+    if (data.disabled) {
+      newSubnet['user-context'] = { disabled: true };
+    }
+
+    dhcp4.subnet4.push(newSubnet);
+
+    await keaService.setConfig(dhcp4, `Added scope ${cidrString}`);
+    return await this.getSubnetById(newId);
   }
 
-  // --- Global Settings & Interface Options ---
-  getInterfacesConfig() {
-    const res = { interfacesv4: 'eth0', interfacesv6: '' };
-    try {
-      if (fs.existsSync(config.interfacesPath)) {
-        const content = fs.readFileSync(config.interfacesPath, 'utf8');
-        const v4Match = content.match(/INTERFACESv4="([^"]*)"/);
-        const v6Match = content.match(/INTERFACESv6="([^"]*)"/);
-        if (v4Match) res.interfacesv4 = v4Match[1];
-        if (v6Match) res.interfacesv6 = v6Match[1];
+  async updateSubnet(id, data) {
+    const dhcp4 = await keaService.getConfig();
+    if (!dhcp4.subnet4) {
+      throw new Error('No subnets configured');
+    }
+
+    const strId = String(id);
+    const index = dhcp4.subnet4.findIndex(
+      (s) => String(s.id) === strId || s.subnet === strId
+    );
+
+    if (index === -1) {
+      throw new Error(`Scope '${id}' not found`);
+    }
+
+    const current = dhcp4.subnet4[index];
+    const { subnet: cidrString } = parseSubnetCidr(data.subnet || current.subnet, data.netmask);
+
+    current.subnet = cidrString;
+    if (data.name) current.comment = data.name;
+
+    // Update pools
+    if (data.rangeStart && data.rangeEnd) {
+      current.pools = [{ pool: `${data.rangeStart} - ${data.rangeEnd}` }];
+    } else if (data.rangeStart === '' && data.rangeEnd === '') {
+      current.pools = [];
+    }
+
+    // Update option-data
+    const optionData = [];
+    const routers = data.routers !== undefined ? data.routers : (current['option-data'] || []).find((o) => o.name === 'routers')?.data;
+    const dns = data.domainNameServers !== undefined ? data.domainNameServers : (current['option-data'] || []).find((o) => o.name === 'domain-name-servers')?.data;
+    const domain = data.domainName !== undefined ? data.domainName : (current['option-data'] || []).find((o) => o.name === 'domain-name')?.data;
+
+    if (routers) optionData.push({ name: 'routers', data: routers });
+    if (dns) optionData.push({ name: 'domain-name-servers', data: dns });
+    if (domain) optionData.push({ name: 'domain-name', data: domain });
+
+    if (Array.isArray(data.customOptions)) {
+      data.customOptions.forEach((opt) => {
+        if (opt.name && opt.data) optionData.push({ name: opt.name, data: opt.data });
+      });
+    }
+
+    current['option-data'] = optionData;
+
+    if (data.defaultLeaseTime) {
+      current['valid-lifetime'] = parseInt(data.defaultLeaseTime, 10);
+    }
+    if (data.disabled !== undefined) {
+      if (data.disabled) {
+        current['user-context'] = { ...(current['user-context'] || {}), disabled: true };
+      } else if (current['user-context']) {
+        delete current['user-context'].disabled;
+        if (Object.keys(current['user-context']).length === 0) {
+          delete current['user-context'];
+        }
       }
-    } catch (e) {}
+      delete current._disabled;
+    }
+
+    await keaService.setConfig(dhcp4, `Updated scope ${cidrString}`);
+    return await this.getSubnetById(current.id);
+  }
+
+  async deleteSubnet(id) {
+    const dhcp4 = await keaService.getConfig();
+    if (!dhcp4.subnet4) {
+      throw new Error('No subnets configured');
+    }
+
+    const strId = String(id);
+    const beforeCount = dhcp4.subnet4.length;
+    dhcp4.subnet4 = dhcp4.subnet4.filter((s) => String(s.id) !== strId && s.subnet !== strId);
+
+    if (dhcp4.subnet4.length === beforeCount) {
+      throw new Error(`Scope '${id}' not found`);
+    }
+
+    await keaService.setConfig(dhcp4, `Deleted scope ${id}`);
+    return { success: true, message: `Scope ${id} deleted successfully` };
+  }
+
+  async toggleSubnetDisabled(id) {
+    const dhcp4 = await keaService.getConfig();
+    const strId = String(id);
+    const subnet = (dhcp4.subnet4 || []).find((s) => String(s.id) === strId || s.subnet === strId);
+    if (!subnet) {
+      throw new Error(`Scope '${id}' not found`);
+    }
+
+    const isCurrentlyDisabled = Boolean(subnet['user-context']?.disabled || subnet._disabled);
+    if (!isCurrentlyDisabled) {
+      subnet['user-context'] = { ...(subnet['user-context'] || {}), disabled: true };
+    } else if (subnet['user-context']) {
+      delete subnet['user-context'].disabled;
+      if (Object.keys(subnet['user-context']).length === 0) {
+        delete subnet['user-context'];
+      }
+    }
+    delete subnet._disabled;
+
+    await keaService.setConfig(dhcp4, `Toggled status for scope ${id}`);
+    return await this.getSubnetById(subnet.id);
+  }
+
+  /**
+   * Reservation Management within a Subnet
+   */
+  async addReservation(subnetId, reservation) {
+    const { hwAddress, ipAddress, hostname } = reservation;
+    if (!hwAddress || !ipAddress) {
+      throw new Error('MAC address (hwAddress) and IP address are required');
+    }
+
+    const dhcp4 = await keaService.getConfig();
+    const strId = String(subnetId);
+    const subnet = (dhcp4.subnet4 || []).find((s) => String(s.id) === strId || s.subnet === strId);
+    if (!subnet) {
+      throw new Error(`Subnet '${subnetId}' not found`);
+    }
+
+    if (!subnet.reservations) {
+      subnet.reservations = [];
+    }
+
+    // Check if MAC already reserved in this subnet
+    const cleanMac = hwAddress.toLowerCase().trim();
+    const existing = subnet.reservations.find(
+      (r) => (r['hw-address'] || '').toLowerCase() === cleanMac || r['ip-address'] === ipAddress
+    );
+    if (existing) {
+      throw new Error(`Reservation with MAC ${hwAddress} or IP ${ipAddress} already exists in this subnet`);
+    }
+
+    const newRes = {
+      'hw-address': cleanMac,
+      'ip-address': ipAddress.trim(),
+      hostname: hostname ? hostname.trim() : ''
+    };
+
+    subnet.reservations.push(newRes);
+    await keaService.setConfig(dhcp4, `Added reservation ${cleanMac} (${ipAddress}) in subnet ${subnet.id}`);
+    return newRes;
+  }
+
+  async updateReservation(subnetId, targetHwAddress, updated) {
+    const dhcp4 = await keaService.getConfig();
+    const strId = String(subnetId);
+    const subnet = (dhcp4.subnet4 || []).find((s) => String(s.id) === strId || s.subnet === strId);
+    if (!subnet) {
+      throw new Error(`Subnet '${subnetId}' not found`);
+    }
+
+    const cleanTargetMac = targetHwAddress.toLowerCase().trim();
+    const res = (subnet.reservations || []).find((r) => (r['hw-address'] || '').toLowerCase() === cleanTargetMac);
+    if (!res) {
+      throw new Error(`Reservation '${targetHwAddress}' not found in subnet ${subnetId}`);
+    }
+
+    if (updated.hwAddress) res['hw-address'] = updated.hwAddress.toLowerCase().trim();
+    if (updated.ipAddress) res['ip-address'] = updated.ipAddress.trim();
+    if (updated.hostname !== undefined) res.hostname = updated.hostname.trim();
+
+    await keaService.setConfig(dhcp4, `Updated reservation ${cleanTargetMac} in subnet ${subnet.id}`);
     return res;
   }
 
-  saveInterfacesConfig(v4, v6) {
-    let content = '';
-    try {
-      if (fs.existsSync(config.interfacesPath)) {
-        content = fs.readFileSync(config.interfacesPath, 'utf8');
-      } else {
-        content = '# Defaults for isc-dhcp-server\nINTERFACESv4=""\nINTERFACESv6=""\n';
-      }
-    } catch (e) {
-      content = '# Defaults for isc-dhcp-server\nINTERFACESv4=""\nINTERFACESv6=""\n';
+  async deleteReservation(subnetId, targetHwAddress) {
+    const dhcp4 = await keaService.getConfig();
+    const strId = String(subnetId);
+    const subnet = (dhcp4.subnet4 || []).find((s) => String(s.id) === strId || s.subnet === strId);
+    if (!subnet) {
+      throw new Error(`Subnet '${subnetId}' not found`);
     }
 
-    if (v4 !== undefined) {
-      if (/INTERFACESv4="[^"]*"/.test(content)) {
-        content = content.replace(/INTERFACESv4="[^"]*"/, `INTERFACESv4="${v4}"`);
-      } else {
-        content += `\nINTERFACESv4="${v4}"`;
-      }
+    const cleanTargetMac = targetHwAddress.toLowerCase().trim();
+    const beforeCount = (subnet.reservations || []).length;
+    subnet.reservations = (subnet.reservations || []).filter(
+      (r) => (r['hw-address'] || '').toLowerCase() !== cleanTargetMac
+    );
+
+    if (subnet.reservations.length === beforeCount) {
+      throw new Error(`Reservation '${targetHwAddress}' not found in subnet ${subnetId}`);
     }
 
-    if (v6 !== undefined) {
-      if (/INTERFACESv6="[^"]*"/.test(content)) {
-        content = content.replace(/INTERFACESv6="[^"]*"/, `INTERFACESv6="${v6}"`);
-      } else {
-        content += `\nINTERFACESv6="${v6}"`;
-      }
-    }
-
-    fs.writeFileSync(config.interfacesPath, content, 'utf8');
+    await keaService.setConfig(dhcp4, `Deleted reservation ${cleanTargetMac} from subnet ${subnet.id}`);
+    return { success: true, message: `Reservation for ${targetHwAddress} deleted successfully` };
   }
 
-  getSystemInterfaces() {
-    try {
-      const netInterfaces = os.networkInterfaces();
-      const list = Object.keys(netInterfaces).filter(name => name !== 'lo' && !name.startsWith('Loopback'));
-      return list.length > 0 ? list : ['eth0', 'eth1'];
-    } catch (e) {
-      return ['eth0', 'eth1'];
-    }
-  }
-
-  getGlobalSettings() {
-    const parsed = this.parseConfig();
-    const interfaces = this.getInterfacesConfig();
-    const systemInterfaces = this.getSystemInterfaces();
+  async getGlobalSettings() {
+    const dhcp4 = await keaService.getConfig();
+    const dnsOpt = (dhcp4['option-data'] || []).find((o) => o.name === 'domain-name-servers');
+    const domainOpt = (dhcp4['option-data'] || []).find((o) => o.name === 'domain-name');
 
     return {
-      defaultLeaseTime: parsed.global.defaultLeaseTime || 86400,
-      maxLeaseTime: parsed.global.maxLeaseTime || 604800,
-      authoritative: Boolean(parsed.global.authoritative),
-      ddnsUpdateStyle: parsed.global.ddnsUpdateStyle || 'none',
-      logFacility: parsed.global.logFacility || 'local7',
-      domainName: parsed.global.domainName || '',
-      domainNameServers: parsed.global.domainNameServers || '',
-      interfacesv4: interfaces.interfacesv4,
-      interfacesv6: interfaces.interfacesv6,
-      systemInterfaces: systemInterfaces,
-      confPath: this.confPath,
-      interfacesPath: config.interfacesPath
+      defaultLeaseTime: dhcp4['valid-lifetime'] || 4000,
+      renewTimer: dhcp4['renew-timer'] || 1000,
+      rebindTimer: dhcp4['rebind-timer'] || 2000,
+      domainNameServers: dnsOpt ? dnsOpt.data : '',
+      domainName: domainOpt ? domainOpt.data : '',
+      authoritative: Boolean(dhcp4.authoritative)
     };
   }
 
-  updateGlobalSettings(data) {
-    let raw = this.getRawConfig();
+  async updateGlobalSettings(settings) {
+    const dhcp4 = await keaService.getConfig();
 
-    // default-lease-time
-    if (data.defaultLeaseTime !== undefined) {
-      if (/default-lease-time\s+\d+;/.test(raw)) {
-        raw = raw.replace(/default-lease-time\s+\d+;/, `default-lease-time ${data.defaultLeaseTime};`);
-      } else {
-        raw = `default-lease-time ${data.defaultLeaseTime};\n` + raw;
+    if (settings.defaultLeaseTime) {
+      dhcp4['valid-lifetime'] = parseInt(settings.defaultLeaseTime, 10);
+    }
+    if (settings.renewTimer) {
+      dhcp4['renew-timer'] = parseInt(settings.renewTimer, 10);
+    }
+    if (settings.rebindTimer) {
+      dhcp4['rebind-timer'] = parseInt(settings.rebindTimer, 10);
+    }
+    if (settings.authoritative !== undefined) {
+      dhcp4.authoritative = Boolean(settings.authoritative);
+    }
+
+    if (!dhcp4['option-data']) {
+      dhcp4['option-data'] = [];
+    }
+
+    if (settings.domainNameServers !== undefined) {
+      let opt = dhcp4['option-data'].find((o) => o.name === 'domain-name-servers');
+      if (opt) {
+        opt.data = settings.domainNameServers;
+      } else if (settings.domainNameServers) {
+        dhcp4['option-data'].push({ name: 'domain-name-servers', data: settings.domainNameServers });
       }
     }
 
-    // max-lease-time
-    if (data.maxLeaseTime !== undefined) {
-      if (/max-lease-time\s+\d+;/.test(raw)) {
-        raw = raw.replace(/max-lease-time\s+\d+;/, `max-lease-time ${data.maxLeaseTime};`);
-      } else {
-        raw = `max-lease-time ${data.maxLeaseTime};\n` + raw;
+    if (settings.domainName !== undefined) {
+      let opt = dhcp4['option-data'].find((o) => o.name === 'domain-name');
+      if (opt) {
+        opt.data = settings.domainName;
+      } else if (settings.domainName) {
+        dhcp4['option-data'].push({ name: 'domain-name', data: settings.domainName });
       }
     }
 
-    // authoritative
-    if (data.authoritative !== undefined) {
-      if (data.authoritative) {
-        if (!/authoritative\s*;/.test(raw)) {
-          raw = raw.replace(/(default-lease-time|max-lease-time)[^;]+;\n?/, '$&\nauthoritative;\n');
-        }
-      } else {
-        raw = raw.replace(/authoritative\s*;\n?/g, '');
-      }
-    }
-
-    // ddns-update-style
-    if (data.ddnsUpdateStyle) {
-      if (/ddns-update-style\s+[\w-]+;/.test(raw)) {
-        raw = raw.replace(/ddns-update-style\s+[\w-]+;/, `ddns-update-style ${data.ddnsUpdateStyle};`);
-      } else {
-        raw += `\nddns-update-style ${data.ddnsUpdateStyle};\n`;
-      }
-    }
-
-    // log-facility
-    if (data.logFacility) {
-      if (/log-facility\s+[\w-]+;/.test(raw)) {
-        raw = raw.replace(/log-facility\s+[\w-]+;/, `log-facility ${data.logFacility};`);
-      } else {
-        raw += `\nlog-facility ${data.logFacility};\n`;
-      }
-    }
-
-    // option domain-name
-    if (data.domainName !== undefined) {
-      if (/option\s+domain-name\s+"[^"]*";/.test(raw)) {
-        raw = raw.replace(/option\s+domain-name\s+"[^"]*";/, `option domain-name "${data.domainName}";`);
-      } else if (data.domainName) {
-        raw += `\noption domain-name "${data.domainName}";\n`;
-      }
-    }
-
-    // option domain-name-servers
-    if (data.domainNameServers !== undefined) {
-      if (/option\s+domain-name-servers\s+[^;]+;/.test(raw)) {
-        raw = raw.replace(/option\s+domain-name-servers\s+[^;]+;/, `option domain-name-servers ${data.domainNameServers};`);
-      } else if (data.domainNameServers) {
-        raw += `\noption domain-name-servers ${data.domainNameServers};\n`;
-      }
-    }
-
-    this.saveRawConfig(raw, 'Global server settings updated');
-
-    if (data.interfacesv4 !== undefined || data.interfacesv6 !== undefined) {
-      this.saveInterfacesConfig(data.interfacesv4, data.interfacesv6);
-    }
-
-    return this.getGlobalSettings();
+    await keaService.setConfig(dhcp4, 'Updated global Kea DHCP settings');
+    return await this.getGlobalSettings();
   }
 }
 
