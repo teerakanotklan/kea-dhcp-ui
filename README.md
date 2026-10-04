@@ -1,93 +1,93 @@
 # Kea DHCP Server Web Management UI
 
-ระบบบริหารจัดการ **Kea DHCP Server** ผ่าน Web Application สไตล์ Modern Glassmorphism พัฒนาด้วย **Node.js (Express API) + React (Vite)** พร้อมสถาปัตยกรรม Single-Port ให้บริการไฟล์ Production Bundle ได้ทันที
+A web application for managing **Kea DHCP Server**, featuring a modern glassmorphism design. It is built with **Node.js (Express API) + React (Vite)** and uses a single-port architecture that serves the production bundle directly.
 
-รองรับการสื่อสารและควบคุม Kea DHCPv4 แบบ Real-time ผ่าน **Kea Control Agent (REST API Port 8000)** และคำสั่งมาตรฐาน `systemctl` / `journalctl`
-
----
-
-## 🌟 จุดเด่นและฟังก์ชันการทำงาน
-
-- 📊 **Dashboard ภาพรวม Real-time (Dual-Service Monitoring)**:
-  - แสดงสถานะการทำงานจริงของทั้ง **`kea-dhcp4-server`** (DHCPv4 Engine) และ **`kea-ctrl-agent`** (REST Control Agent)
-  - สรุปจำนวน Scopes, Static Reservations, Active Leases และ Pool Capacity
-  - กราฟและแถบแสดงอัตราการใช้งาน Address Pool (%) ในแต่ละ Subnet
-  - ควบคุมและรีสตาร์ต Service แยกตัวได้อย่างอิสระ
-- 🔐 **Authentication & Security (Admin Role)**:
-  - ระบบตรวจสอบสิทธิ์ด้วย JWT Token (HMAC-SHA256)
-  - บัญชีเริ่มต้น: `admin` / รหัสผ่าน: `admin123`
-- 🌐 **Scope & Subnet Management**:
-  - จัดการ Kea Subnet CIDR (เช่น `192.168.100.0/24`), Dynamic Pool Range (`192.168.100.10 - 192.168.100.200`)
-  - กำหนด Gateway (`routers`), DNS Servers (`domain-name-servers`), Domain Name, และ Custom Kea Option-Data
-- 📌 **Integrated Static Host Reservations**:
-  - จัดการผูก MAC Address กับ IP Address ถาวร (`reservations`) เข้าไปในแต่ละ Scope โดยตรงตามโครงสร้าง Native ของ Kea
-  - ป้องกันการจอง IP หรือ MAC ชนกันใน Subnet เดียวกัน
-- 📡 **Lease Management ผ่าน REST API**:
-  - ดึงข้อมูล Active Leases สดผ่าน Kea Control Agent (`lease4-get-all`) ร่วมกับ Hook `libdhcp_lease_cmds.so`
-  - ค้นหาและกรองสถานะ พร้อมฟังก์ชัน Release Lease (`lease4-del`)
-  - ส่งออกข้อมูลเป็นไฟล์ CSV
-- 📝 **Configuration & Safety**:
-  - ใช้งาน Kea Control Agent เป็น Source of Truth ในการส่งคำสั่ง runtime (`config-set`) และบันทึกลงไฟล์ (`config-write`)
-  - ระบบ Auto-Backup สำรองไฟล์ `/etc/kea/kea-dhcp4.conf` อัตโนมัติทุกครั้งก่อนบันทึก
-- 📜 **Service Logs**:
-  - ดึงข้อมูลบันทึกสดผ่าน `journalctl` โดยสามารถเลือกดูเฉพาะ Kea DHCPv4, Kea Control Agent หรือ All Services พร้อมระบบ Auto-poll
+It communicates with and controls Kea DHCPv4 in real time through the **Kea Control Agent (REST API, port 8000)** and the standard `systemctl` / `journalctl` commands.
 
 ---
 
-## 🐧 การติดตั้งอัตโนมัติบน Linux Server (Automated Installer)
+## Features
 
-โปรเจกต์มีสคริปต์ `install.sh` สำหรับติดตั้งแบบอัตโนมัติครบวงจร โดยจะตรวจสอบ OS, ติดตั้งแพ็กเกจ Kea DHCP Stack, สร้าง Dedicated User (`dhcpui`), กำหนดสิทธิ์ Sudoers, Build Frontend และเปิดใช้งาน Systemd Service ให้อัตโนมัติ
+- **Real-time Dashboard (Dual-Service Monitoring)**:
+  - Shows the live status of both **`kea-dhcp4-server`** (DHCPv4 engine) and **`kea-ctrl-agent`** (REST Control Agent)
+  - Summarizes Scopes, Static Reservations, Active Leases, and Pool Capacity
+  - Charts and bars showing Address Pool utilization (%) for each subnet
+  - Start, stop, and restart each service independently
+- **Authentication & Security (Admin Role)**:
+  - JWT token authentication (HMAC-SHA256)
+  - Default account: `admin` / password: `admin123`
+- **Scope & Subnet Management**:
+  - Manage Kea subnet CIDRs (e.g. `192.168.100.0/24`) and dynamic pool ranges (`192.168.100.10 - 192.168.100.200`)
+  - Configure gateway (`routers`), DNS servers (`domain-name-servers`), domain name, and custom Kea option-data
+- **Integrated Static Host Reservations**:
+  - Bind MAC addresses to permanent IP addresses (`reservations`) directly within each scope, following Kea's native structure
+  - Prevents duplicate IP or MAC reservations within the same subnet
+- **Lease Management via REST API**:
+  - Fetches live active leases through the Kea Control Agent (`lease4-get-all`) with the `libdhcp_lease_cmds.so` hook
+  - Search and filter by state, with a Release Lease function (`lease4-del`)
+  - Export data to CSV
+- **Configuration & Safety**:
+  - Uses the Kea Control Agent as the source of truth for runtime commands (`config-set`) and for persisting to disk (`config-write`)
+  - Automatically backs up `/etc/kea/kea-dhcp4.conf` before every save
+- **Service Logs**:
+  - Fetches live logs through `journalctl`, with filtering for Kea DHCPv4, Kea Control Agent, or All Services, plus auto-polling
 
-### ระบบปฏิบัติการที่รองรับ:
-- **Debian Family**: Debian 11 / 12, Ubuntu 22.04 / 24.04 LTS (แพ็กเกจ `kea-dhcp4-server` และ `kea-ctrl-agent`)
-- **Enterprise Linux (RHEL Family)**: Rocky Linux 8 / 9, AlmaLinux 8 / 9, RHEL 8 / 9, CentOS Stream, Fedora (แพ็กเกจ `kea`)
+---
 
-### ขั้นตอนการติดตั้ง:
+## Automated Installation on a Linux Server
+
+The project includes an `install.sh` script for fully automated installation. It detects the OS, installs the Kea DHCP stack packages, creates a dedicated user (`dhcpui`), configures sudoers permissions, builds the frontend, and enables the systemd service.
+
+### Supported operating systems:
+- **Debian family**: Debian 11 / 12, Ubuntu 22.04 / 24.04 LTS (packages `kea-dhcp4-server` and `kea-ctrl-agent`)
+- **Enterprise Linux (RHEL family)**: Rocky Linux 8 / 9, AlmaLinux 8 / 9, RHEL 8 / 9, CentOS Stream, Fedora (package `kea`)
+
+### Installation steps:
 
 ```bash
-# 1. Clone โปรเจกต์ไปยังเซิร์ฟเวอร์
+# 1. Clone the project onto the server
 git clone <repository-url> /opt/kea-dhcp-ui
 cd /opt/kea-dhcp-ui
 
-# 2. รันสคริปต์ติดตั้งด้วยสิทธิ์ root
+# 2. Run the installer as root
 sudo bash install.sh
 ```
 
-### สคริปต์ `install.sh` จะดำเนินการสิ่งต่อไปนี้ให้อัตโนมัติ:
-1. ตรวจจับ Linux Distribution และเลือกใช้ Package Manager (`apt` หรือ `dnf`/`yum`)
-2. ติดตั้งแพ็กเกจ Kea DHCP: `kea-dhcp4-server`, `kea-ctrl-agent`, `curl`, `git`
-3. ติดตั้ง Node.js 20 LTS จาก NodeSource หากระบบยังไม่มี
-4. สร้าง System User เฉพาะ `dhcpui` เพื่อความปลอดภัย
-5. ตั้งค่าสิทธิ์ `/etc/sudoers.d/kea-dhcp-ui` เพื่อให้ `dhcpui` สั่งการเฉพาะคำสั่ง lifecycle ของ Kea services
-6. ค้นหาและเปิดใช้งาน Hook Library `libdhcp_lease_cmds.so` อัตโนมัติ
-7. สร้างไฟล์คอนฟิกเริ่มต้น `/etc/kea/kea-dhcp4.conf` และ `/etc/kea/kea-ctrl-agent.conf` (เชื่อมต่อผ่าน Unix Socket `/run/kea/kea4-ctrl-socket`)
-8. ติดตั้ง Node dependencies และคอมไพล์ Frontend Production Bundle (`npm run build`)
-9. สร้างและเปิดใช้งาน Systemd Unit: `kea-dhcp-ui.service` ที่พอร์ต `3000`
+### The `install.sh` script automatically performs the following:
+1. Detects the Linux distribution and selects the package manager (`apt` or `dnf`/`yum`)
+2. Installs the Kea DHCP packages: `kea-dhcp4-server`, `kea-ctrl-agent`, `curl`, `git`
+3. Installs Node.js 20 LTS from NodeSource if it is not already present
+4. Creates a dedicated system user `dhcpui` for security
+5. Configures `/etc/sudoers.d/kea-dhcp-ui` so `dhcpui` can run only the Kea service lifecycle commands
+6. Locates and enables the `libdhcp_lease_cmds.so` hook library automatically
+7. Creates the initial configs `/etc/kea/kea-dhcp4.conf` and `/etc/kea/kea-ctrl-agent.conf` (connected via the Unix socket `/run/kea/kea4-ctrl-socket`)
+8. Installs Node dependencies and builds the frontend production bundle (`npm run build`)
+9. Creates and enables the systemd unit `kea-dhcp-ui.service` on port `3000`
 
 ---
 
-## 🌐 การเข้าใช้งานระบบ
+## Accessing the System
 
-เมื่อติดตั้งสำเร็จ สามารถเปิดเว็บบราวเซอร์และเข้าไปที่:
-- **URL**: `http://<IP-ของเซิร์ฟเวอร์>:3000` (หรือ `http://localhost:3000`)
+After a successful installation, open a web browser and go to:
+- **URL**: `http://<server-ip>:3000` (or `http://localhost:3000`)
 - **Username**: `admin`
 - **Password**: `admin123`
 
 ---
 
-## 🔧 คำสั่งจัดการ Service บน Linux
+## Linux Service Management Commands
 
 ```bash
-# ตรวจสอบสถานะ Web UI
+# Check Web UI status
 sudo systemctl status kea-dhcp-ui
 
-# ตรวจสอบสถานะ Kea DHCP Server
+# Check Kea DHCP Server status
 sudo systemctl status kea-dhcp4-server
 
-# ตรวจสอบสถานะ Kea Control Agent (REST API)
+# Check Kea Control Agent (REST API) status
 sudo systemctl status kea-ctrl-agent
 
-# ตรวจสอบ Logs
+# View logs
 sudo journalctl -u kea-dhcp-ui -f
 sudo journalctl -u kea-dhcp4-server -u kea-ctrl-agent -f
 ```
