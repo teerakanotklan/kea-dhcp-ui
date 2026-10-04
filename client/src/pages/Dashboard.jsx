@@ -39,6 +39,8 @@ export function Dashboard({ setNotification }) {
 
   useEffect(() => {
     fetchDashboardData();
+    const interval = setInterval(fetchDashboardData, 5000);
+    return () => clearInterval(interval);
   }, []);
 
   const handleRestartService = async (target, label) => {
@@ -64,16 +66,7 @@ export function Dashboard({ setNotification }) {
     }
   };
 
-  if (loading && !data) {
-    return (
-      <div className="page-wrapper text-center py-24">
-        <RefreshCw className="pulse-dot mx-auto mb-4 text-indigo-500" size={32} />
-        <div className="text-slate-500 dark:text-slate-400 font-medium">
-          Loading Kea Dashboard Overview...
-        </div>
-      </div>
-    );
-  }
+
 
   const counts = data?.counts || {};
   const dhcp4Service = data?.service?.dhcp4 || {};
@@ -81,7 +74,7 @@ export function Dashboard({ setNotification }) {
 
   return (
     <div className="page-wrapper space-y-6 sm:space-y-8">
-      {/* Page Title & Action Bar */}
+      {/* Page Title */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white mb-1">
@@ -90,17 +83,6 @@ export function Dashboard({ setNotification }) {
           <p className="text-slate-500 dark:text-slate-400 text-sm">
             High-performance modular DHCPv4 with REST Control Agent
           </p>
-        </div>
-
-        <div className="flex items-center gap-2.5 self-start sm:self-auto">
-          <button
-            className="btn btn-secondary text-xs sm:text-sm"
-            onClick={fetchDashboardData}
-            disabled={loading}
-          >
-            <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
-            Refresh
-          </button>
         </div>
       </div>
 

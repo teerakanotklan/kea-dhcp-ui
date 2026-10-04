@@ -224,15 +224,7 @@ export function ScopeForm({ setNotification }) {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="page-wrapper flex items-center justify-center py-20">
-        <div className="text-slate-500 dark:text-slate-400 font-medium animate-pulse">
-          Loading Scope Details...
-        </div>
-      </div>
-    );
-  }
+
 
   return (
     <div className="page-wrapper space-y-6">

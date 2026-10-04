@@ -119,6 +119,8 @@ export function Settings({ setNotification }) {
     }
   };
 
+
+
   const dhcp4 = status?.dhcp4 || {};
   const ctrlAgent = status?.ctrlAgent || {};
 
@@ -134,18 +136,6 @@ export function Settings({ setNotification }) {
             Manage Kea DHCPv4 daemon, Control Agent REST API, and global IP lease parameters
           </p>
         </div>
-
-        <button
-          className="btn btn-secondary text-xs sm:text-sm self-start sm:self-auto"
-          onClick={() => {
-            fetchStatus();
-            fetchSettings();
-          }}
-          disabled={loading || settingsLoading}
-        >
-          <RefreshCw size={15} className={loading || settingsLoading ? 'animate-spin' : ''} />
-          Refresh
-        </button>
       </div>
 
       {/* Section 1: Dual Service Controls */}

@@ -1,8 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { Plus, Edit2, Trash2, BookmarkCheck, Search, Copy, Check, RefreshCw, Network } from 'lucide-react';
+import { Plus, Edit2, Trash2, BookmarkCheck, Search, Copy, Check, Network, X } from 'lucide-react';
 import { ConfirmModal } from '../../components/ConfirmModal';
+import { Pagination } from '../../components/Pagination';
+import { SortableTh, EmptyState, CopyText } from '../../components/TableParts';
+import { usePersistedState } from '../../hooks/usePersistedState';
+import { useSortableData } from '../../hooks/useSortableData';
 
 const ipToLong = (ip) => {
   if (!ip) return 0;
@@ -25,13 +29,22 @@ const findMatchingScope = (ip, scopes) => {
   return scopes.find((s) => isIpInSubnet(ip, s.subnet, s.netmask));
 };
 
+const SORT_COLUMNS = {
+  name: { get: (h) => h.name || '', type: 'string' },
+  mac: { get: (h) => h.mac || '', type: 'string' },
+  ip: { get: (h) => h.ip || '', type: 'ip' },
+  description: { get: (h) => h.description || '', type: 'string' }
+};
+
 export function StaticIP({ setNotification }) {
   const { apiFetch } = useAuth();
   const [hosts, setHosts] = useState([]);
   const [scopes, setScopes] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [copiedKey, setCopiedKey] = useState(null);
+  const [search, setSearch] = usePersistedState('staticIP.search', '');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = usePersistedState('staticIP.pageSize', 25);
+
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -47,7 +60,7 @@ export function StaticIP({ setNotification }) {
       setHosts(Array.isArray(dataHosts) ? dataHosts : []);
       setScopes(Array.isArray(dataScopes) ? dataScopes : []);
     } catch (err) {
-      setNotification({ type: 'danger', message: err.message });
+      if (setNotification) setNotification({ type: 'danger', message: err.message });
     } finally {
       setLoading(false);
     }
@@ -55,13 +68,9 @@ export function StaticIP({ setNotification }) {
 
   useEffect(() => {
     fetchHostsAndScopes();
+    const interval = setInterval(fetchHostsAndScopes, 5000);
+    return () => clearInterval(interval);
   }, []);
-
-  const handleCopy = (text, key) => {
-    navigator.clipboard.writeText(text);
-    setCopiedKey(key);
-    setTimeout(() => setCopiedKey(null), 2000);
-  };
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
@@ -74,47 +83,56 @@ export function StaticIP({ setNotification }) {
       const result = await res.json();
       if (!res.ok) throw new Error(result.error);
 
-      setNotification({ type: 'success', message: `Host '${deleteTarget.name}' reservation deleted` });
+      if (setNotification) {
+        setNotification({ type: 'success', message: `Host '${deleteTarget.name}' reservation deleted` });
+      }
       setDeleteTarget(null);
       fetchHostsAndScopes();
     } catch (err) {
-      setNotification({ type: 'danger', message: err.message });
+      if (setNotification) setNotification({ type: 'danger', message: err.message });
     } finally {
       setDeleting(false);
     }
   };
 
-  const filteredHosts = hosts.filter((h) => {
-    const q = search.toLowerCase();
-    const scope = findMatchingScope(h.ip, scopes);
-    const scopeName = scope?.name || scope?.subnet || '';
-    return (
-      h.name.toLowerCase().includes(q) ||
-      h.mac.toLowerCase().includes(q) ||
-      h.ip.includes(q) ||
-      scopeName.toLowerCase().includes(q) ||
-      (h.description && h.description.toLowerCase().includes(q))
-    );
-  });
+  const filteredHosts = useMemo(() => {
+    const q = search.toLowerCase().trim();
+    if (!q) return hosts;
+    return hosts.filter((h) => {
+      const scope = findMatchingScope(h.ip, scopes);
+      const scopeName = scope?.name || scope?.subnet || '';
+      return (
+        h.name.toLowerCase().includes(q) ||
+        h.mac.toLowerCase().includes(q) ||
+        h.ip.includes(q) ||
+        scopeName.toLowerCase().includes(q) ||
+        (h.description && h.description.toLowerCase().includes(q))
+      );
+    });
+  }, [hosts, scopes, search]);
+
+  const { sorted: sortedHosts, sort, toggleSort } = useSortableData(filteredHosts, SORT_COLUMNS);
+  const sortProps = { sort, onSort: toggleSort };
+
+  const paginatedHosts = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return sortedHosts.slice(start, start + pageSize);
+  }, [sortedHosts, currentPage, pageSize]);
 
   return (
     <div className="page-wrapper page-fill">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white mb-1">
+          <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white mb-0.5">
             Static IP Reservations
           </h1>
-          <p className="text-slate-500 dark:text-slate-400 text-sm">
+          <p className="text-slate-500 dark:text-slate-400 text-xs sm:text-sm">
             Bind MAC physical addresses to dedicated fixed IP allocations
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5 self-start sm:self-auto">
-          <button className="btn btn-secondary text-xs sm:text-sm" onClick={fetchHostsAndScopes}>
-            <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
-            Refresh
-          </button>
+        <div className="flex items-center gap-2 self-start sm:self-auto">
           <Link to="/static-hosts/add" className="btn btn-primary text-xs sm:text-sm">
             <Plus size={16} />
             Add Static Host
@@ -122,59 +140,67 @@ export function StaticIP({ setNotification }) {
         </div>
       </div>
 
-      {/* Search & Stats Bar */}
-      <div className="glass-card flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 sm:p-5">
+      {/* Search Bar & Stats */}
+      <div className="flex items-center justify-between gap-3">
         <div className="relative flex-1 max-w-md w-full">
           <input
             type="text"
-            className="input-text pl-10 text-xs sm:text-sm"
-            placeholder="Search by Hostname, MAC, IP, or Scope Name..."
+            className="input-text pl-9 pr-8 text-xs sm:text-sm py-2"
+            placeholder="Search Hostname, MAC, IP, or Scope..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
           <Search
-            size={17}
-            className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500"
+            size={15}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
           />
+          {search && (
+            <button
+              onClick={() => setSearch('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-white"
+            >
+              <X size={14} />
+            </button>
+          )}
         </div>
 
-        <div className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-          Showing <strong className="text-slate-900 dark:text-white">{filteredHosts.length}</strong> of{' '}
-          <strong className="text-slate-900 dark:text-white">{hosts.length}</strong> reservations
+        <div className="text-xs text-slate-500 dark:text-slate-400">
+          Showing <strong className="text-slate-800 dark:text-slate-200 font-mono">{filteredHosts.length}</strong> of{' '}
+          <strong className="font-mono">{hosts.length}</strong> reservations
         </div>
       </div>
 
       {/* Table */}
-      <div className="glass-card table-card">
-        <div className="table-container border-0">
+      <div className="glass-card table-card shadow-sm">
+        <div className="table-container">
           <table className="data-table">
             <thead>
               <tr>
-                <th>Host Identifier</th>
+                <SortableTh label="Host Identifier" sortKey="name" {...sortProps} />
                 <th>Scope Name</th>
-                <th>MAC Address</th>
-                <th>Fixed IP Address</th>
-                <th>Description / Purpose</th>
+                <SortableTh label="MAC Address" sortKey="mac" {...sortProps} />
+                <SortableTh label="Fixed IP Address" sortKey="ip" {...sortProps} />
+                <SortableTh label="Description / Purpose" sortKey="description" {...sortProps} />
                 <th className="text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {filteredHosts.map((h) => {
+              {paginatedHosts.map((h) => {
                 const scope = findMatchingScope(h.ip, scopes);
                 return (
                   <tr key={h.name}>
                     <td>
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
-                          <BookmarkCheck size={16} />
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-7 h-7 rounded-lg bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                          <BookmarkCheck size={15} />
                         </div>
-                        <span className="font-semibold text-slate-900 dark:text-white">{h.name}</span>
+                        <span className="font-semibold text-slate-900 dark:text-white text-xs sm:text-sm">{h.name}</span>
                       </div>
                     </td>
 
                     <td>
                       {scope ? (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-200/50 dark:border-indigo-500/20">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-200/50 dark:border-indigo-500/20">
                           <Network size={12} />
                           {scope.name || scope.subnet}
                         </span>
@@ -184,44 +210,22 @@ export function StaticIP({ setNotification }) {
                     </td>
 
                     <td>
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-slate-600 dark:text-slate-400 text-xs sm:text-sm">
-                          {h.mac}
-                        </span>
-                        <button
-                          className="btn-icon p-1"
-                          onClick={() => handleCopy(h.mac, `mac-${h.name}`)}
-                          title="Copy MAC"
-                        >
-                          {copiedKey === `mac-${h.name}` ? (
-                            <Check size={13} className="text-emerald-500" />
-                          ) : (
-                            <Copy size={13} />
-                          )}
-                        </button>
-                      </div>
+                      <CopyText
+                        value={h.mac}
+                        setNotification={setNotification}
+                        className="font-mono text-slate-600 dark:text-slate-400 text-xs sm:text-sm"
+                      />
                     </td>
 
                     <td>
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono font-bold text-cyan-600 dark:text-cyan-400 text-xs sm:text-sm">
-                          {h.ip}
-                        </span>
-                        <button
-                          className="btn-icon p-1"
-                          onClick={() => handleCopy(h.ip, `ip-${h.name}`)}
-                          title="Copy IP"
-                        >
-                          {copiedKey === `ip-${h.name}` ? (
-                            <Check size={13} className="text-emerald-500" />
-                          ) : (
-                            <Copy size={13} />
-                          )}
-                        </button>
-                      </div>
+                      <CopyText
+                        value={h.ip}
+                        setNotification={setNotification}
+                        className="font-mono font-bold text-cyan-600 dark:text-cyan-400 text-xs sm:text-sm"
+                      />
                     </td>
 
-                    <td className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 max-w-xs truncate">
+                    <td className="text-xs text-slate-500 dark:text-slate-400 max-w-xs truncate">
                       {h.description || <span className="opacity-40">—</span>}
                     </td>
 
@@ -247,20 +251,41 @@ export function StaticIP({ setNotification }) {
                 );
               })}
 
-              {filteredHosts.length === 0 && (
-                <tr>
-                  <td colSpan="6" className="text-center py-12 text-slate-500 dark:text-slate-400">
-                    {search && (
-                      <button className="btn btn-secondary text-xs mb-2" onClick={() => setSearch('')}>Clear filter</button>
-                    )}
-                    <div />
-                    No static host reservations match your query
+              {filteredHosts.length === 0 && !loading && (
+                <tr className="h-full">
+                  <td colSpan="6" className="h-full p-0">
+                    <EmptyState
+                      icon={BookmarkCheck}
+                      title={search ? `No static hosts matching "${search}"` : 'No static host reservations configured'}
+                      hint={search ? 'Try searching for a different hostname, MAC, or IP address.' : 'Add static host entries to bind IP addresses permanently to client MAC addresses.'}
+                      actions={
+                        search ? (
+                          <button className="btn btn-secondary text-xs" onClick={() => setSearch('')}>
+                            Clear filter
+                          </button>
+                        ) : (
+                          <Link to="/static-hosts/add" className="btn btn-primary text-xs">
+                            <Plus size={14} /> Add Static Host
+                          </Link>
+                        )
+                      }
+                    />
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
+
+        {/* Pagination Controls */}
+        <Pagination
+          currentPage={currentPage}
+          totalItems={filteredHosts.length}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={setPageSize}
+          pageSizeOptions={[10, 25, 50, 100]}
+        />
       </div>
 
       {/* Delete Confirmation Modal */}
@@ -268,12 +293,10 @@ export function StaticIP({ setNotification }) {
         isOpen={Boolean(deleteTarget)}
         onClose={() => setDeleteTarget(null)}
         onConfirm={confirmDelete}
-        title="Delete Host Reservation"
-        message={`Are you sure you want to delete static host reservation '${deleteTarget?.name}' (${deleteTarget?.ip})? This action cannot be undone.`}
+        title="Delete Static Reservation"
+        message={`Are you sure you want to delete static IP reservation '${deleteTarget?.name}' (${deleteTarget?.ip})?`}
         confirmText="Delete Reservation"
         loading={deleting}
-        loadingText="Deleting..."
-        danger={true}
       />
     </div>
   );

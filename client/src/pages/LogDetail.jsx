@@ -139,7 +139,7 @@ export function LogDetail({ setNotification }) {
 
   if (!log) {
     return (
-      <div className="page-container space-y-6">
+      <div className="page-wrapper max-w-6xl mx-auto py-8 px-4 sm:px-8 space-y-6">
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -179,7 +179,7 @@ export function LogDetail({ setNotification }) {
   const isWarn = (log.level || '').toUpperCase() === 'WARN';
 
   return (
-    <div className="page-container space-y-6">
+    <div className="page-wrapper max-w-6xl mx-auto py-8 px-4 sm:px-8 space-y-6">
       {/* Top Header & Actions */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">

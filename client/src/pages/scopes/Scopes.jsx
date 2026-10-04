@@ -1,32 +1,49 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { ConfirmModal } from '../../components/ConfirmModal';
 import { ActionDropdown } from '../../components/ActionDropdown';
+import { Pagination } from '../../components/Pagination';
+import { SortableTh, EmptyState } from '../../components/TableParts';
+import { usePersistedState } from '../../hooks/usePersistedState';
+import { useSortableData } from '../../hooks/useSortableData';
 import {
   Plus,
+  Search,
+  Network,
+  Power,
+  PowerOff,
   Edit2,
   Trash2,
-  Network,
-  RefreshCw,
-  Search,
-  X,
-  Power,
-  PowerOff
+  X
 } from 'lucide-react';
 
-const maskToCidr = (mask) => {
-  const parts = (mask || '').split('.').map(Number);
-  if (parts.length !== 4 || parts.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return null;
-  const bits = parts.map((n) => n.toString(2).padStart(8, '0')).join('');
-  if (!/^1*0*$/.test(bits)) return null;
-  const firstZero = bits.indexOf('0');
-  return firstZero === -1 ? 32 : firstZero;
+const getCidr = (sub) => {
+  if (sub.subnetCidr) return sub.subnetCidr;
+  if (!sub.subnet) return '';
+  if (sub.netmask) {
+    const maskMap = {
+      '255.255.255.0': '/24',
+      '255.255.0.0': '/16',
+      '255.0.0.0': '/8',
+      '255.255.255.128': '/25',
+      '255.255.255.192': '/26',
+      '255.255.255.224': '/27',
+      '255.255.255.240': '/28',
+      '255.255.255.248': '/29',
+      '255.255.255.252': '/30',
+    };
+    return `${sub.subnet}${maskMap[sub.netmask] || ''}`;
+  }
+  return sub.subnet;
 };
 
-const getCidr = (s) => {
-  const prefix = maskToCidr(s.netmask);
-  return prefix === null ? '' : `${s.subnet}/${prefix}`;
+const SORT_COLUMNS = {
+  name: { get: (s) => s.name || '', type: 'string' },
+  cidr: { get: (s) => s.subnetCidr || getCidr(s), type: 'string' },
+  range: { get: (s) => s.rangeStart || '', type: 'ip' },
+  resCount: { get: (s) => s.reservations?.length || 0, type: 'number' },
+  status: { get: (s) => (s.disabled ? 'disabled' : s.rangeStart ? 'active' : 'static'), type: 'string' }
 };
 
 export function Scopes({ setNotification }) {
@@ -34,7 +51,10 @@ export function Scopes({ setNotification }) {
   const navigate = useNavigate();
   const [scopes, setScopes] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = usePersistedState('scopes.search', '');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = usePersistedState('scopes.pageSize', 25);
+
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [disableTarget, setDisableTarget] = useState(null);
@@ -45,9 +65,9 @@ export function Scopes({ setNotification }) {
       setLoading(true);
       const res = await apiFetch('/api/scopes');
       const data = await res.json();
-      setScopes(data);
+      setScopes(Array.isArray(data) ? data : []);
     } catch (err) {
-      setNotification({ type: 'danger', message: err.message });
+      if (setNotification) setNotification({ type: 'danger', message: err.message });
     } finally {
       setLoading(false);
     }
@@ -55,6 +75,8 @@ export function Scopes({ setNotification }) {
 
   useEffect(() => {
     fetchScopes();
+    const interval = setInterval(fetchScopes, 5000);
+    return () => clearInterval(interval);
   }, []);
 
   const handleToggle = async (scope, { fromModal = false } = {}) => {
@@ -66,13 +88,15 @@ export function Scopes({ setNotification }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
 
-      setNotification({
-        type: 'success',
-        message: `Scope ${scope.subnet} is now ${data.disabled ? 'Disabled' : 'Enabled'}`,
-      });
+      if (setNotification) {
+        setNotification({
+          type: 'success',
+          message: `Scope ${scope.subnet} is now ${data.disabled ? 'Disabled' : 'Enabled'}`,
+        });
+      }
       fetchScopes();
     } catch (err) {
-      setNotification({ type: 'danger', message: err.message });
+      if (setNotification) setNotification({ type: 'danger', message: err.message });
     } finally {
       if (fromModal) {
         setDisableLoading(false);
@@ -92,48 +116,53 @@ export function Scopes({ setNotification }) {
       const result = await res.json();
       if (!res.ok) throw new Error(result.error);
 
-      setNotification({ type: 'success', message: `Scope ${deleteTarget.subnet} deleted successfully` });
+      if (setNotification) {
+        setNotification({ type: 'success', message: `Scope ${deleteTarget.subnet} deleted successfully` });
+      }
       setDeleteTarget(null);
       fetchScopes();
     } catch (err) {
-      setNotification({ type: 'danger', message: err.message });
+      if (setNotification) setNotification({ type: 'danger', message: err.message });
     } finally {
       setDeleteLoading(false);
     }
   };
 
-  const filteredScopes = scopes.filter((sub) => {
-    const term = search.toLowerCase();
-    return (
-      sub.name?.toLowerCase().includes(term) ||
-      getCidr(sub).includes(term) ||
-      sub.subnet?.toLowerCase().includes(term) ||
-      sub.netmask?.toLowerCase().includes(term)
-    );
-  });
+  const filteredScopes = useMemo(() => {
+    const term = search.toLowerCase().trim();
+    if (!term) return scopes;
+    return scopes.filter((sub) => {
+      return (
+        sub.name?.toLowerCase().includes(term) ||
+        getCidr(sub).includes(term) ||
+        sub.subnet?.toLowerCase().includes(term) ||
+        sub.netmask?.toLowerCase().includes(term)
+      );
+    });
+  }, [scopes, search]);
+
+  const { sorted: sortedScopes, sort, toggleSort } = useSortableData(filteredScopes, SORT_COLUMNS);
+  const sortProps = { sort, onSort: toggleSort };
+
+  const paginatedScopes = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return sortedScopes.slice(start, start + pageSize);
+  }, [sortedScopes, currentPage, pageSize]);
 
   return (
     <div className="page-wrapper page-fill">
-      {/* Header */}
+      {/* Header & Single-row Toolbar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white mb-1">
+          <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white mb-0.5">
             Scope Management
           </h1>
-          <p className="text-slate-500 dark:text-slate-400 text-sm">
+          <p className="text-slate-500 dark:text-slate-400 text-xs sm:text-sm">
             Configure network scopes, IP allocation pools, gateways, and DNS resolvers
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5 self-start sm:self-auto">
-          <button
-            className="btn btn-secondary text-xs sm:text-sm"
-            onClick={fetchScopes}
-            disabled={loading}
-          >
-            <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
-            Refresh
-          </button>
+        <div className="flex items-center gap-2 self-start sm:self-auto">
           <Link to="/scopes/add" className="btn btn-primary text-xs sm:text-sm">
             <Plus size={16} />
             Add Scope
@@ -141,13 +170,13 @@ export function Scopes({ setNotification }) {
         </div>
       </div>
 
-      {/* Search & Statistics Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      {/* Search Bar & Counter */}
+      <div className="flex items-center justify-between gap-3">
         <div className="relative flex-1 max-w-md w-full">
           <input
             type="text"
             className="input-text pl-9 pr-8 text-xs sm:text-sm py-2"
-            placeholder="Filter scopes (name, IP, CIDR, netmask)..."
+            placeholder="Filter scopes by name, IP, CIDR, or netmask..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -166,7 +195,8 @@ export function Scopes({ setNotification }) {
         </div>
 
         <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-          Showing {filteredScopes.length} of {scopes.length} scopes
+          Showing <strong className="text-slate-800 dark:text-slate-200 font-mono">{filteredScopes.length}</strong> of{' '}
+          <strong className="font-mono">{scopes.length}</strong> scopes
         </span>
       </div>
 
@@ -176,26 +206,27 @@ export function Scopes({ setNotification }) {
           <table className="data-table">
             <thead>
               <tr>
-                <th className="text-center w-16">No.</th>
-                <th>Scope Name</th>
-                <th>CIDR</th>
-                <th>Pool Range</th>
-                <th>Static Hosts</th>
-                <th>Status</th>
+                <th className="text-center w-14">No.</th>
+                <SortableTh label="Scope Name" sortKey="name" {...sortProps} />
+                <SortableTh label="CIDR" sortKey="cidr" {...sortProps} />
+                <SortableTh label="Pool Range" sortKey="range" {...sortProps} />
+                <SortableTh label="Static Hosts" sortKey="resCount" {...sortProps} />
+                <SortableTh label="Status" sortKey="status" {...sortProps} />
                 <th className="text-right">Action</th>
               </tr>
             </thead>
             <tbody>
-              {filteredScopes.map((sub, index) => {
+              {paginatedScopes.map((sub, index) => {
                 const isConfigured = Boolean(sub.rangeStart && sub.rangeEnd);
                 const isDisabled = Boolean(sub.disabled);
                 const resCount = sub.reservations?.length || 0;
+                const absoluteIndex = (currentPage - 1) * pageSize + index + 1;
 
                 return (
                   <tr key={sub.id || sub.subnet}>
-                    {/* 1. No. */}
+                    {/* No. */}
                     <td className="text-center font-mono text-xs text-slate-400 dark:text-slate-500">
-                      {index + 1}
+                      {absoluteIndex}
                     </td>
 
                     {/* Scope Name */}
@@ -241,7 +272,7 @@ export function Scopes({ setNotification }) {
                       )}
                     </td>
 
-                    {/* 4. Action Dropdown */}
+                    {/* Action Dropdown */}
                     <td className="text-right">
                       <ActionDropdown
                         items={[
@@ -270,27 +301,40 @@ export function Scopes({ setNotification }) {
               })}
 
               {filteredScopes.length === 0 && !loading && (
-                <tr>
-                  <td colSpan={7} className="text-center py-12 text-slate-500 dark:text-slate-400">
-                    <div className="flex flex-col items-center gap-2">
-                      <Network size={36} className="text-slate-400 opacity-60" />
-                      <span className="font-medium text-sm">
-                        {search ? `No scopes matching "${search}"` : 'No scopes configured'}
-                      </span>
-                      {search ? (
-                        <button className="btn btn-secondary text-xs mt-1" onClick={() => setSearch('')}>Clear filter</button>
-                      ) : (
-                        <Link to="/scopes/add" className="btn btn-primary text-xs mt-1"><Plus size={14} /> Add Scope</Link>
-                      )}
-                      <span className="hidden">
-                      </span>
-                    </div>
+                <tr className="h-full">
+                  <td colSpan={7} className="h-full p-0">
+                    <EmptyState
+                      icon={Network}
+                      title={search ? `No scopes matching "${search}"` : 'No scopes configured yet'}
+                      hint={search ? 'Try searching for a different scope name or subnet CIDR.' : 'Create network scopes to manage dynamic IP allocation pools.'}
+                      actions={
+                        search ? (
+                          <button className="btn btn-secondary text-xs" onClick={() => setSearch('')}>
+                            Clear filter
+                          </button>
+                        ) : (
+                          <Link to="/scopes/add" className="btn btn-primary text-xs">
+                            <Plus size={14} /> Add Scope
+                          </Link>
+                        )
+                      }
+                    />
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
+
+        {/* Pagination Controls */}
+        <Pagination
+          currentPage={currentPage}
+          totalItems={filteredScopes.length}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={setPageSize}
+          pageSizeOptions={[10, 25, 50, 100]}
+        />
       </div>
 
       {/* Delete Confirmation Modal */}
@@ -299,23 +343,19 @@ export function Scopes({ setNotification }) {
         onClose={() => setDeleteTarget(null)}
         onConfirm={confirmDelete}
         title="Delete Scope"
-        message={`Are you sure you want to delete Scope ${deleteTarget?.subnet}? This will erase its DHCP pool configuration permanently.`}
+        message={`Are you sure you want to delete scope "${deleteTarget?.name || deleteTarget?.subnet}"? This action cannot be undone.`}
         confirmText="Delete Scope"
         loading={deleteLoading}
-        loadingText="Deleting..."
       />
 
-      {/* Disable Scope Confirmation Modal */}
+      {/* Disable Confirmation Modal */}
       <ConfirmModal
         isOpen={Boolean(disableTarget)}
         onClose={() => setDisableTarget(null)}
         onConfirm={() => handleToggle(disableTarget, { fromModal: true })}
-        variant="warning"
-        icon={PowerOff}
         title="Disable Scope"
-        message={`Disable Scope ${disableTarget?.subnet}? Clients in this scope will stop receiving new IP addresses until it is enabled again.`}
+        message={`Are you sure you want to disable scope "${disableTarget?.name || disableTarget?.subnet}"? Clients will no longer receive IP addresses from this scope.`}
         confirmText="Disable Scope"
-        loadingText="Disabling..."
         loading={disableLoading}
       />
     </div>

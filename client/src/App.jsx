@@ -85,15 +85,7 @@ export function AppContent() {
     }
   }, [user]);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-50 dark:bg-[#070a13] flex items-center justify-center">
-        <div className="text-slate-500 dark:text-slate-400 font-medium animate-pulse">
-          Initializing ISC DHCP Management...
-        </div>
-      </div>
-    );
-  }
+
 
   return (
     <>

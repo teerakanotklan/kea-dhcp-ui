@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { Pagination } from '../components/Pagination';
 import { ActionDropdown } from '../components/ActionDropdown';
-import { SortableTh, TableSkeleton, EmptyState, CopyText } from '../components/TableParts';
+import { SortableTh, EmptyState, CopyText } from '../components/TableParts';
 import { usePersistedState } from '../hooks/usePersistedState';
 import { useSortableData } from '../hooks/useSortableData';
 import {
@@ -107,13 +107,10 @@ export function Leases({ setNotification }) {
     setCurrentPage(1);
     fetchLeases();
     fetchScopes();
-  }, [statusFilter]);
 
-  useEffect(() => {
-    if (!autoRefresh) return;
-    const interval = setInterval(fetchLeases, 10000);
+    const interval = setInterval(fetchLeases, 5000);
     return () => clearInterval(interval);
-  }, [autoRefresh, statusFilter, search]);
+  }, [statusFilter]);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
@@ -313,21 +310,9 @@ export function Leases({ setNotification }) {
             )}
           </form>
 
-          <button
-            className={`btn text-xs py-2 ${autoRefresh ? 'btn-cyan' : 'btn-secondary'}`}
-            onClick={() => setAutoRefresh(!autoRefresh)}
-            title="Auto refresh every 10 seconds"
-          >
-            <Clock size={14} />
-            {autoRefresh ? 'Auto: ON' : 'Auto'}
-          </button>
           <button className="btn btn-secondary text-xs py-2" onClick={exportCSV} title="Export CSV">
             <Download size={14} />
             CSV
-          </button>
-          <button className="btn btn-secondary text-xs py-2" onClick={fetchLeases} disabled={loading}>
-            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-            Refresh
           </button>
         </div>
       </div>
@@ -348,8 +333,6 @@ export function Leases({ setNotification }) {
               </tr>
             </thead>
             <tbody>
-              {loading && leases.length === 0 && <TableSkeleton rows={10} cols={7} />}
-
               {paginatedLeases.map((l) => (
                 <tr key={`${l.ip}-${l.mac}`}>
                   <td>
@@ -430,8 +413,8 @@ export function Leases({ setNotification }) {
               ))}
 
               {leases.length === 0 && !loading && (
-                <tr>
-                  <td colSpan="7">
+                <tr className="h-full">
+                  <td colSpan="7" className="h-full p-0">
                     <EmptyState
                       icon={Wifi}
                       title={isFiltering ? 'No leases match the current filters' : 'No lease records yet'}

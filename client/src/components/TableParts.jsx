@@ -31,7 +31,7 @@ export function TableSkeleton({ rows = 8, cols = 6 }) {
 // Empty-state row content
 export function EmptyState({ icon: Icon, title, hint, actions }) {
   return (
-    <div className="flex flex-col items-center gap-2.5 py-14 text-slate-500 dark:text-slate-400">
+    <div className="flex flex-col items-center justify-center gap-2.5 py-16 h-full min-h-[250px] text-slate-500 dark:text-slate-400">
       {Icon && <Icon size={36} className="opacity-50" />}
       <span className="font-semibold text-sm text-slate-700 dark:text-slate-200">{title}</span>
       {hint && <span className="text-xs">{hint}</span>}

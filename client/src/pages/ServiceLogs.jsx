@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Pagination } from '../components/Pagination';
-import { SortableTh, TableSkeleton } from '../components/TableParts';
+import { SortableTh } from '../components/TableParts';
 import { usePersistedState } from '../hooks/usePersistedState';
 import { useSortableData } from '../hooks/useSortableData';
 import {
@@ -78,13 +78,9 @@ export function ServiceLogs({ setNotification }) {
 
   useEffect(() => {
     fetchLogs();
-  }, [selectedService, limit]);
-
-  useEffect(() => {
-    if (!autoRefresh) return;
     const interval = setInterval(fetchLogs, 5000);
     return () => clearInterval(interval);
-  }, [autoRefresh, selectedService, limit]);
+  }, [selectedService, limit]);
 
   // Client-side filtering
   const filteredLogs = useMemo(() => {
@@ -324,19 +320,8 @@ export function ServiceLogs({ setNotification }) {
           </button>
         )}
 
-        <button
-          className={`btn text-xs py-2 ${autoRefresh ? 'btn-cyan' : 'btn-secondary'}`}
-          onClick={() => setAutoRefresh(!autoRefresh)}
-          title="Auto-refresh logs every 5 seconds"
-        >
-          <Clock size={14} />
-          {autoRefresh ? 'Auto: ON' : 'Auto'}
-        </button>
         <button className="btn btn-secondary text-xs py-2" onClick={exportCSV} disabled={filteredLogs.length === 0} title="Export filtered logs to CSV">
           <Download size={14} /> CSV
-        </button>
-        <button className="btn btn-secondary text-xs py-2" onClick={fetchLogs} disabled={loading}>
-          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
         </button>
       </div>
 
@@ -347,15 +332,15 @@ export function ServiceLogs({ setNotification }) {
             <thead>
               <tr>
                 <th className="text-center w-14">#</th>
-                <SortableTh label="Timestamp" sortKey="timestamp" className="w-44" {...sortProps} />
+                <SortableTh label="Timestamp" sortKey="timestamp" className="w-40" {...sortProps} />
                 <SortableTh label="Service" sortKey="service" className="w-32" {...sortProps} />
                 <SortableTh label="Level" sortKey="level" className="w-24" {...sortProps} />
-                <SortableTh label="Event Tag" sortKey="event" {...sortProps} />
+                <SortableTh label="Event Tag" sortKey="event" className="w-44" {...sortProps} />
+                <th className="max-w-xs lg:max-w-sm xl:max-w-lg">Message</th>
                 <th className="text-right w-24">Action</th>
               </tr>
             </thead>
             <tbody>
-              {loading && logs.length === 0 && <TableSkeleton rows={12} cols={6} />}
               {paginatedLogs.map((log, index) => {
                 const isError = (log.level || '').toUpperCase() === 'ERROR';
                 const isWarn = (log.level || '').toUpperCase() === 'WARN';
@@ -400,6 +385,13 @@ export function ServiceLogs({ setNotification }) {
                       </span>
                     </td>
 
+                    {/* Truncated Message (Ellipsis, no horizontal scroll) */}
+                    <td className="font-mono text-xs leading-normal text-slate-700 dark:text-slate-300 truncate max-w-xs lg:max-w-sm xl:max-w-lg">
+                      <span className={isError ? 'text-rose-500 font-medium' : isWarn ? 'text-amber-500 font-medium' : ''}>
+                        {log.message}
+                      </span>
+                    </td>
+
                     {/* Actions */}
                     <td className="text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                       <div className="inline-flex items-center gap-1">
@@ -426,23 +418,20 @@ export function ServiceLogs({ setNotification }) {
               })}
 
               {filteredLogs.length === 0 && !loading && (
-                <tr>
-                  <td colSpan={6} className="text-center py-16 text-slate-500 dark:text-slate-400">
-                    <div className="flex flex-col items-center gap-2.5">
-                      <Terminal size={36} className="text-slate-400 opacity-60" />
-                      <span className="font-semibold text-sm">
-                        {isFiltering ? 'No logs match the current filter criteria' : 'No log entries available'}
-                      </span>
-                      {isFiltering && (
-                        <button
-                          type="button"
-                          className="btn btn-secondary text-xs mt-1"
-                          onClick={handleResetFilters}
-                        >
-                          Clear All Filters
-                        </button>
-                      )}
-                    </div>
+                <tr className="h-full">
+                  <td colSpan={7} className="h-full p-0">
+                    <EmptyState
+                      icon={Terminal}
+                      title={isFiltering ? 'No logs match the current filter criteria' : 'No log entries available'}
+                      hint={isFiltering ? 'Try changing the service, severity level, category, or search text.' : 'System logs generated by Kea daemons will appear here.'}
+                      actions={
+                        isFiltering && (
+                          <button type="button" className="btn btn-secondary text-xs" onClick={handleResetFilters}>
+                            <RotateCcw size={13} /> Reset Filters
+                          </button>
+                        )
+                      }
+                    />
                   </td>
                 </tr>
               )}
