@@ -106,21 +106,21 @@ export function AppContent() {
           path="/*"
           element={
             <ProtectedRoute>
-              <div className="min-h-screen bg-slate-50 dark:bg-[#070a13] flex text-slate-900 dark:text-slate-100">
+              <div className="h-screen overflow-hidden bg-slate-50 dark:bg-[#070a13] flex text-slate-900 dark:text-slate-100">
                 {/* Sidebar with responsive mobile drawer */}
                 <Sidebar
                   isOpen={mobileMenuOpen}
                   onClose={() => setMobileMenuOpen(false)}
                 />
 
-                <div className="flex-1 flex flex-col min-w-0 overflow-x-clip">
+                <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
                   <Navbar
                     theme={theme}
                     toggleTheme={toggleTheme}
                     onOpenMobileMenu={() => setMobileMenuOpen(true)}
                   />
 
-                  <main className="flex-1 pb-16">
+                  <main className="flex-1 min-h-0 overflow-y-auto flex flex-col">
                     <Routes>
                       {/* Dashboard */}
                       <Route path="/" element={<Dashboard setNotification={setNotification} />} />

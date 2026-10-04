@@ -113,7 +113,7 @@ export function Scopes({ setNotification }) {
   });
 
   return (
-    <div className="page-wrapper max-w-7xl mx-auto space-y-6">
+    <div className="page-wrapper page-fill">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -171,7 +171,7 @@ export function Scopes({ setNotification }) {
       </div>
 
       {/* Scopes Table */}
-      <div className="glass-card p-0 overflow-hidden shadow-sm">
+      <div className="glass-card table-card shadow-sm">
         <div className="table-container">
           <table className="data-table">
             <thead>
@@ -271,11 +271,18 @@ export function Scopes({ setNotification }) {
 
               {filteredScopes.length === 0 && !loading && (
                 <tr>
-                  <td colSpan={5} className="text-center py-12 text-slate-500 dark:text-slate-400">
+                  <td colSpan={7} className="text-center py-12 text-slate-500 dark:text-slate-400">
                     <div className="flex flex-col items-center gap-2">
                       <Network size={36} className="text-slate-400 opacity-60" />
                       <span className="font-medium text-sm">
                         {search ? `No scopes matching "${search}"` : 'No scopes configured'}
+                      </span>
+                      {search ? (
+                        <button className="btn btn-secondary text-xs mt-1" onClick={() => setSearch('')}>Clear filter</button>
+                      ) : (
+                        <Link to="/scopes/add" className="btn btn-primary text-xs mt-1"><Plus size={14} /> Add Scope</Link>
+                      )}
+                      <span className="hidden">
                       </span>
                     </div>
                   </td>

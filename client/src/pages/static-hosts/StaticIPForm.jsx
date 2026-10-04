@@ -169,7 +169,7 @@ export function StaticIPForm({ setNotification }) {
 
   if (loading) {
     return (
-      <div className="page-wrapper max-w-7xl mx-auto flex items-center justify-center py-20">
+      <div className="page-wrapper flex items-center justify-center py-20">
         <div className="text-slate-500 dark:text-slate-400 font-medium animate-pulse">
           Loading Host Details...
         </div>
@@ -178,7 +178,7 @@ export function StaticIPForm({ setNotification }) {
   }
 
   return (
-    <div className="page-wrapper max-w-7xl space-y-6">
+    <div className="page-wrapper space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>

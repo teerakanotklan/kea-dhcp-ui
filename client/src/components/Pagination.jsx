@@ -39,7 +39,7 @@ export function Pagination({
   if (totalItems === 0) return null;
 
   return (
-    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3 border-t border-slate-200/80 dark:border-white/10 bg-slate-50/50 dark:bg-white/[0.01]">
+    <div className="shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3 border-t border-slate-200/80 dark:border-white/10 bg-slate-50/50 dark:bg-slate-900/80">
       {/* Range and page size */}
       <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400 flex-wrap">
         <span>

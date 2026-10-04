@@ -98,7 +98,7 @@ export function StaticIP({ setNotification }) {
   });
 
   return (
-    <div className="page-wrapper space-y-6 sm:space-y-8">
+    <div className="page-wrapper page-fill">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -145,7 +145,7 @@ export function StaticIP({ setNotification }) {
       </div>
 
       {/* Table */}
-      <div className="glass-card p-0 overflow-hidden">
+      <div className="glass-card table-card">
         <div className="table-container border-0">
           <table className="data-table">
             <thead>
@@ -250,6 +250,10 @@ export function StaticIP({ setNotification }) {
               {filteredHosts.length === 0 && (
                 <tr>
                   <td colSpan="6" className="text-center py-12 text-slate-500 dark:text-slate-400">
+                    {search && (
+                      <button className="btn btn-secondary text-xs mb-2" onClick={() => setSearch('')}>Clear filter</button>
+                    )}
+                    <div />
                     No static host reservations match your query
                   </td>
                 </tr>

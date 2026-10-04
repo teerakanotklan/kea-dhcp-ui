@@ -85,10 +85,6 @@
     @apply bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-500/15 dark:text-indigo-400 dark:border-indigo-500/30;
   }
 
-  .badge-conflict {
-    @apply bg-amber-50 text-amber-800 border border-amber-300 dark:bg-amber-500/20 dark:text-amber-300 dark:border-amber-500/40;
-  }
-
   .pulse-dot {
     @apply w-2 h-2 rounded-full bg-current shadow-[0_0_8px_currentColor] animate-pulse;
   }
@@ -116,7 +112,24 @@
   }
 
   .data-table th {
-    @apply px-4 py-3.5 bg-slate-50 dark:bg-white/[0.02] text-slate-500 dark:text-slate-400 font-semibold text-xs uppercase tracking-wider border-b border-slate-200/80 dark:border-white/10 whitespace-nowrap;
+    @apply px-4 py-3.5 bg-slate-50 dark:bg-slate-900 text-slate-500 dark:text-slate-400 font-semibold text-xs uppercase tracking-wider border-b border-slate-200/80 dark:border-white/10 whitespace-nowrap sticky top-0 z-10;
+  }
+
+  .data-table th.sortable {
+    @apply cursor-pointer select-none hover:text-slate-900 dark:hover:text-white transition-colors;
+  }
+
+  /* Fill-height table card: header/toolbar fixed, body scrolls, pagination pinned */
+  .table-card {
+    @apply flex-1 min-h-0 flex flex-col p-0 overflow-hidden;
+  }
+
+  .table-card .table-container {
+    @apply flex-1 min-h-0 overflow-auto border-0 rounded-none;
+  }
+
+  .skeleton-bar {
+    @apply h-3.5 rounded bg-slate-200 dark:bg-white/10 animate-pulse;
   }
 
   .data-table td {
@@ -151,7 +164,12 @@
 
   /* Page Wrapper */
   .page-wrapper {
-    @apply p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full animate-fadeIn;
+    @apply p-4 sm:p-6 lg:px-8 lg:py-6 w-full animate-fadeIn;
+  }
+
+  /* Pages whose main content is a table: fill remaining viewport height */
+  .page-fill {
+    @apply flex-1 min-h-0 flex flex-col gap-4;
   }
 
   /* Toast Notification */

@@ -3,6 +3,9 @@ import { useAuth } from '../context/AuthContext';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { Pagination } from '../components/Pagination';
 import { ActionDropdown } from '../components/ActionDropdown';
+import { SortableTh, TableSkeleton, EmptyState, CopyText } from '../components/TableParts';
+import { usePersistedState } from '../hooks/usePersistedState';
+import { useSortableData } from '../hooks/useSortableData';
 import {
   Wifi,
   Search,
@@ -12,12 +15,7 @@ import {
   RotateCcw,
   Bookmark,
   BookmarkPlus,
-  Calendar,
   X,
-  CheckCircle,
-  AlertTriangle,
-  ShieldAlert,
-  Network,
   Copy
 } from 'lucide-react';
 
@@ -33,17 +31,34 @@ const formatDateTime = (dateStr) => {
   }
 };
 
+const STATUS_TABS = [
+  { id: 'all', label: 'All' },
+  { id: 'active', label: 'Active' },
+  { id: 'reserved', label: 'Reserved' },
+  { id: 'expired', label: 'Expired' },
+  { id: 'declined', label: 'Declined' }
+];
+
+const SORT_COLUMNS = {
+  ip: { get: (l) => l.ip, type: 'ip' },
+  mac: { get: (l) => l.mac, type: 'string' },
+  hostname: { get: (l) => l.hostname, type: 'string' },
+  status: { get: (l) => l.status, type: 'string' },
+  starts: { get: (l) => l.starts, type: 'date' },
+  ends: { get: (l) => l.ends, type: 'date' }
+};
+
 export function Leases({ setNotification }) {
   const { apiFetch } = useAuth();
   const [leases, setLeases] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [search, setSearch] = usePersistedState('leases.search', '');
+  const [statusFilter, setStatusFilter] = usePersistedState('leases.status', 'all');
   const [autoRefresh, setAutoRefresh] = useState(false);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = usePersistedState('leases.pageSize', 25);
 
   // Release state
   const [releaseTarget, setReleaseTarget] = useState(null);
@@ -65,7 +80,12 @@ export function Leases({ setNotification }) {
 
       const res = await apiFetch(`/api/leases?${query.toString()}`);
       const data = await res.json();
-      setLeases(data.leases || []);
+      // Conflicting leases are shown as normal active leases
+      setLeases(
+        (data.leases || []).map((l) =>
+          l.status === 'conflict' ? { ...l, status: 'active', isConflict: false } : l
+        )
+      );
     } catch (err) {
       if (setNotification) setNotification({ type: 'danger', message: err.message });
     } finally {
@@ -101,10 +121,19 @@ export function Leases({ setNotification }) {
     fetchLeases();
   };
 
+  const { sorted: sortedLeases, sort, toggleSort } = useSortableData(leases, SORT_COLUMNS);
+
   const paginatedLeases = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
-    return leases.slice(start, start + pageSize);
-  }, [leases, currentPage, pageSize]);
+    return sortedLeases.slice(start, start + pageSize);
+  }, [sortedLeases, currentPage, pageSize]);
+
+  const isFiltering = statusFilter !== 'all' || Boolean(search);
+  const clearFilters = () => {
+    setStatusFilter('all');
+    setSearch('');
+    setCurrentPage(1);
+  };
 
   const confirmRelease = async () => {
     if (!releaseTarget) return;
@@ -140,8 +169,6 @@ export function Leases({ setNotification }) {
     e.preventDefault();
     if (!reserveTarget) return;
 
-    const isConflict = Boolean(reserveTarget.isConflict || reserveTarget.conflictInfo);
-
     try {
       setReserving(true);
       const res = await apiFetch(`/api/leases/${reserveTarget.ip}/reserve`, {
@@ -150,8 +177,7 @@ export function Leases({ setNotification }) {
         body: JSON.stringify({
           mac: reserveTarget.mac,
           hostname: reserveHostname.trim(),
-          subnetId: reserveSubnetId,
-          overwrite: isConflict
+          subnetId: reserveSubnetId
         })
       });
 
@@ -199,17 +225,6 @@ export function Leases({ setNotification }) {
 
   const renderStatusBadge = (lease) => {
     const st = lease.status || 'active';
-    if (st === 'conflict' || lease.isConflict) {
-      return (
-        <span
-          className="badge badge-conflict"
-          title={`IP is reserved for MAC: ${lease.conflictInfo?.reservedForMac || 'another host'}`}
-        >
-          <AlertTriangle size={11} className="shrink-0" />
-          <span>Conflict</span>
-        </span>
-      );
-    }
     if (st === 'reserved' || lease.isReserved) {
       return (
         <span className="badge badge-purple" title="Static Host Reservation (Strict Match)">
@@ -235,7 +250,7 @@ export function Leases({ setNotification }) {
     }
     if (st === 'declined') {
       return (
-        <span className="badge badge-danger" title="Client declined IP (conflict detected)">
+        <span className="badge badge-danger" title="Client declined this IP">
           <span>Declined</span>
         </span>
       );
@@ -247,129 +262,122 @@ export function Leases({ setNotification }) {
     );
   };
 
+  const sortProps = { sort, onSort: toggleSort };
+
   return (
-    <div className="page-wrapper space-y-6 sm:space-y-8">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white mb-1">
+    <div className="page-wrapper page-fill">
+      {/* Header + single-row toolbar */}
+      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">
             DHCP IP Leases
           </h1>
-          <p className="text-slate-500 dark:text-slate-400 text-sm">
-            Live records of active IP assignments and static host reservations granted to network clients
+          <p className="text-slate-500 dark:text-slate-400 text-xs sm:text-sm truncate">
+            Live records of active IP assignments and static host reservations
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5 self-start sm:self-auto">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="segmented-tabs overflow-x-auto">
+            {STATUS_TABS.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setStatusFilter(tab.id)}
+                className={`segmented-tab-btn ${statusFilter === tab.id ? 'active' : ''}`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          <form onSubmit={handleSearchSubmit} className="relative w-64">
+            <input
+              type="text"
+              className="input-text pl-9 pr-8 py-2 text-xs sm:text-sm"
+              placeholder="Search IP, MAC, hostname..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            {search && (
+              <button
+                type="button"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-white"
+                onClick={() => {
+                  setSearch('');
+                  setTimeout(fetchLeases, 0);
+                }}
+              >
+                <X size={14} />
+              </button>
+            )}
+          </form>
+
           <button
-            className={`btn text-xs sm:text-sm ${autoRefresh ? 'btn-cyan' : 'btn-secondary'}`}
+            className={`btn text-xs py-2 ${autoRefresh ? 'btn-cyan' : 'btn-secondary'}`}
             onClick={() => setAutoRefresh(!autoRefresh)}
             title="Auto refresh every 10 seconds"
           >
-            <Clock size={15} />
-            {autoRefresh ? 'Auto (10s): ON' : 'Auto-Refresh'}
+            <Clock size={14} />
+            {autoRefresh ? 'Auto: ON' : 'Auto'}
           </button>
-          <button className="btn btn-secondary text-xs sm:text-sm" onClick={exportCSV}>
-            <Download size={15} />
-            Export CSV
+          <button className="btn btn-secondary text-xs py-2" onClick={exportCSV} title="Export CSV">
+            <Download size={14} />
+            CSV
           </button>
-          <button className="btn btn-secondary text-xs sm:text-sm" onClick={fetchLeases} disabled={loading}>
-            <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
+          <button className="btn btn-secondary text-xs py-2" onClick={fetchLeases} disabled={loading}>
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
             Refresh
           </button>
         </div>
       </div>
 
-      {/* Filter & Search Bar */}
-      <div className="glass-card flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 sm:p-5">
-        {/* Status Tabs */}
-        <div className="segmented-tabs overflow-x-auto self-start md:self-auto">
-          {[
-            { id: 'all', label: 'All' },
-            { id: 'active', label: 'Active' },
-            { id: 'reserved', label: 'Reserved' },
-            { id: 'conflict', label: 'Conflict' },
-            { id: 'expired', label: 'Expired' },
-            { id: 'declined', label: 'Declined' }
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setStatusFilter(tab.id)}
-              className={`segmented-tab-btn ${statusFilter === tab.id ? 'active' : ''}`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Search Form */}
-        <form onSubmit={handleSearchSubmit} className="flex items-center gap-2 max-w-md w-full">
-          <div className="relative flex-1">
-            <input
-              type="text"
-              className="input-text pl-10 text-xs sm:text-sm"
-              placeholder="Search IP, MAC, hostname..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-            <Search
-              size={17}
-              className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500"
-            />
-          </div>
-          <button type="submit" className="btn btn-secondary text-xs sm:text-sm shrink-0">
-            Search
-          </button>
-        </form>
-      </div>
-
-      {/* Leases Table */}
-      <div className="glass-card p-0 overflow-hidden">
-        <div className="table-container border-0">
+      {/* Leases Table (fills remaining height) */}
+      <div className="glass-card table-card">
+        <div className="table-container">
           <table className="data-table">
             <thead>
               <tr>
-                <th>Assigned IP</th>
-                <th>Hardware MAC</th>
-                <th>Client Hostname</th>
-                <th>Status</th>
-                <th>Lease Start</th>
-                <th>End Lease</th>
+                <SortableTh label="Assigned IP" sortKey="ip" {...sortProps} />
+                <SortableTh label="Hardware MAC" sortKey="mac" {...sortProps} />
+                <SortableTh label="Client Hostname" sortKey="hostname" {...sortProps} />
+                <SortableTh label="Status" sortKey="status" {...sortProps} />
+                <SortableTh label="Lease Start" sortKey="starts" {...sortProps} />
+                <SortableTh label="End Lease" sortKey="ends" {...sortProps} />
                 <th className="text-right">Action</th>
               </tr>
             </thead>
             <tbody>
+              {loading && leases.length === 0 && <TableSkeleton rows={10} cols={7} />}
+
               {paginatedLeases.map((l) => (
-                <tr key={`${l.ip}-${l.mac}`} className={l.status === 'conflict' ? 'bg-amber-500/[0.04]' : ''}>
+                <tr key={`${l.ip}-${l.mac}`}>
                   <td>
                     <div className="flex items-center gap-2.5">
                       <Wifi size={15} className="text-cyan-500 shrink-0" />
-                      <div>
-                        <span className="font-mono font-bold text-slate-900 dark:text-white text-xs sm:text-sm">
-                          {l.ip}
-                        </span>
-                        {l.status === 'conflict' && l.conflictInfo && (
-                          <span className="block text-[10px] text-amber-600 dark:text-amber-400 font-medium">
-                            Reserved for: {l.conflictInfo.reservedForHostname || l.conflictInfo.reservedForMac}
-                          </span>
-                        )}
-                      </div>
+                      <CopyText
+                        value={l.ip}
+                        setNotification={setNotification}
+                        className="font-mono font-bold text-slate-900 dark:text-white text-xs sm:text-sm"
+                      />
                     </div>
                   </td>
 
                   <td>
-                    <span className="font-mono text-slate-600 dark:text-slate-400 text-xs sm:text-sm">
+                    <CopyText
+                      value={l.mac}
+                      setNotification={setNotification}
+                      className="font-mono text-slate-600 dark:text-slate-400 text-xs sm:text-sm"
+                    >
                       {l.mac || 'N/A'}
-                    </span>
+                    </CopyText>
                   </td>
 
                   <td className="font-medium text-slate-800 dark:text-slate-200">
                     {l.hostname ? l.hostname : <span className="text-slate-400 italic font-normal">—</span>}
                   </td>
 
-                  <td>
-                    {renderStatusBadge(l)}
-                  </td>
+                  <td>{renderStatusBadge(l)}</td>
 
                   <td className="text-xs text-slate-600 dark:text-slate-300 font-mono">
                     {formatDateTime(l.starts)}
@@ -387,35 +395,17 @@ export function Leases({ setNotification }) {
                   <td className="text-right">
                     <ActionDropdown
                       items={[
-                        // 1. Conflict actions
-                        l.status === 'conflict' && {
-                          label: 'Force Release IP',
-                          icon: ShieldAlert,
-                          danger: true,
-                          onClick: () => setReleaseTarget(l)
-                        },
-                        l.status === 'conflict' && {
-                          label: 'Overwrite & Reserve',
-                          icon: BookmarkPlus,
-                          onClick: () => openReserveModal(l)
-                        },
-
-                        // 2. Normal reservation conversion
-                        !l.isReserved && l.status !== 'conflict' && {
+                        !l.isReserved && {
                           label: 'Convert to Reserve',
                           icon: BookmarkPlus,
                           onClick: () => openReserveModal(l)
                         },
-
-                        // 3. Normal release action
                         !l.isReserved && l.status === 'active' && {
                           label: 'Release Lease',
                           icon: RotateCcw,
                           danger: true,
                           onClick: () => setReleaseTarget(l.ip)
                         },
-
-                        // Separator & Utility actions
                         { separator: true },
                         {
                           label: 'Copy IP Address',
@@ -441,17 +431,23 @@ export function Leases({ setNotification }) {
 
               {leases.length === 0 && !loading && (
                 <tr>
-                  <td colSpan="7" className="text-center py-12 text-slate-500 dark:text-slate-400">
-                    No lease records matching the current criteria
-                  </td>
-                </tr>
-              )}
-
-              {loading && leases.length === 0 && (
-                <tr>
-                  <td colSpan="7" className="text-center py-12 text-slate-500 dark:text-slate-400">
-                    <RefreshCw size={24} className="animate-spin mx-auto mb-2 text-indigo-500" />
-                    Loading IP leases...
+                  <td colSpan="7">
+                    <EmptyState
+                      icon={Wifi}
+                      title={isFiltering ? 'No leases match the current filters' : 'No lease records yet'}
+                      hint={isFiltering ? 'Try a different status or search keyword.' : 'Leases appear here as clients obtain IP addresses.'}
+                      actions={
+                        isFiltering ? (
+                          <button className="btn btn-secondary text-xs" onClick={clearFilters}>
+                            Clear filters
+                          </button>
+                        ) : (
+                          <button className="btn btn-secondary text-xs" onClick={fetchLeases}>
+                            <RefreshCw size={13} /> Refresh
+                          </button>
+                        )
+                      }
+                    />
                   </td>
                 </tr>
               )}
@@ -477,13 +473,9 @@ export function Leases({ setNotification }) {
         onConfirm={confirmRelease}
         variant="danger"
         icon={RotateCcw}
-        title={releaseTarget && typeof releaseTarget === 'object' && releaseTarget.status === 'conflict' ? 'Force Release Conflicted Lease' : 'Release Lease'}
-        message={
-          releaseTarget && typeof releaseTarget === 'object' && releaseTarget.status === 'conflict'
-            ? `Force release the lease for ${releaseTarget.ip}? This removes the active lease from Kea runtime so the reserved device (${releaseTarget.conflictInfo?.reservedForMac}) can claim this IP immediately.`
-            : `Release the active lease for ${typeof releaseTarget === 'object' ? releaseTarget?.ip : releaseTarget}? The client will lose this address and must request a new one from the DHCP pool.`
-        }
-        confirmText={releaseTarget && typeof releaseTarget === 'object' && releaseTarget.status === 'conflict' ? 'Force Release IP' : 'Release Lease'}
+        title="Release Lease"
+        message={`Release the active lease for ${typeof releaseTarget === 'object' ? releaseTarget?.ip : releaseTarget}? The client will lose this address and must request a new one from the DHCP pool.`}
+        confirmText="Release Lease"
         loadingText="Releasing..."
         loading={releasing}
       />
@@ -496,9 +488,7 @@ export function Leases({ setNotification }) {
               <div className="flex items-center gap-2.5 text-indigo-600 dark:text-indigo-400">
                 <BookmarkPlus size={22} />
                 <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                  {reserveTarget.status === 'conflict' || reserveTarget.conflictInfo
-                    ? 'Overwrite & Reserve IP'
-                    : 'Convert to Host Reservation'}
+                  Convert to Host Reservation
                 </h3>
               </div>
               <button
@@ -510,24 +500,9 @@ export function Leases({ setNotification }) {
               </button>
             </div>
 
-            {/* Conflict / Overwrite Warning Banner */}
-            {(reserveTarget.status === 'conflict' || reserveTarget.conflictInfo) ? (
-              <div className="p-3.5 bg-amber-50 dark:bg-amber-500/10 border border-amber-300 dark:border-amber-500/30 rounded-xl space-y-1.5">
-                <div className="flex items-center gap-2 text-xs font-bold text-amber-800 dark:text-amber-300">
-                  <AlertTriangle size={15} />
-                  <span>Reservation Overwrite & Force Release</span>
-                </div>
-                <p className="text-[11px] leading-relaxed text-amber-700 dark:text-amber-400">
-                  IP <strong>{reserveTarget.ip}</strong> is currently reserved for{' '}
-                  <strong>{reserveTarget.conflictInfo?.reservedForHostname || reserveTarget.conflictInfo?.reservedForMac}</strong>.
-                  Confirming will overwrite the reservation for this client (<strong>{reserveTarget.mac}</strong>) and force-release the old lease so the previous owner receives a new IP from the pool.
-                </p>
-              </div>
-            ) : (
-              <p className="text-xs text-slate-600 dark:text-slate-300">
-                Lock this IP address specifically to this client's hardware MAC address so it will always receive the exact same IP.
-              </p>
-            )}
+            <p className="text-xs text-slate-600 dark:text-slate-300">
+              Lock this IP address specifically to this client's hardware MAC address so it will always receive the exact same IP.
+            </p>
 
             <form onSubmit={handleConfirmReservation} className="space-y-4">
               {/* Readonly IP & MAC row */}
@@ -598,22 +573,13 @@ export function Leases({ setNotification }) {
                 </button>
                 <button
                   type="submit"
-                  className={`btn text-xs sm:text-sm gap-2 ${
-                    reserveTarget.status === 'conflict' || reserveTarget.conflictInfo
-                      ? 'btn-danger'
-                      : 'btn-primary'
-                  }`}
+                  className="btn btn-primary text-xs sm:text-sm gap-2"
                   disabled={reserving}
                 >
                   {reserving ? (
                     <>
                       <RefreshCw size={14} className="animate-spin" />
                       Saving Reservation...
-                    </>
-                  ) : reserveTarget.status === 'conflict' || reserveTarget.conflictInfo ? (
-                    <>
-                      <AlertTriangle size={14} />
-                      Overwrite & Force Reserve
                     </>
                   ) : (
                     <>
