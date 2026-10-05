@@ -66,7 +66,7 @@ export function Sidebar({ isOpen, onClose, isCollapsed }) {
         }`}
       >
         {/* Header */}
-        <div className={`h-16 px-4 flex items-center ${isCollapsed ? 'lg:justify-center' : 'justify-between'} border-b border-slate-200/80 dark:border-white/10 shrink-0`}>
+        <div className={`h-16 px-4 flex items-center ${isCollapsed ? 'lg:justify-center' : ''} justify-between border-b border-slate-200/80 dark:border-white/10 shrink-0`}>
           <div className="flex items-center gap-3 overflow-hidden">
             <div
               className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-cyan-500 flex items-center justify-center text-white shadow-glow-indigo shrink-0"
@@ -74,16 +74,14 @@ export function Sidebar({ isOpen, onClose, isCollapsed }) {
             >
               <Activity size={22} />
             </div>
-            {!isCollapsed && (
-              <div>
-                <h1 className="font-bold text-base tracking-tight text-slate-900 dark:text-white whitespace-nowrap leading-tight">
-                  Kea DHCP UI
-                </h1>
-                <span className="text-[11px] font-semibold text-cyan-600 dark:text-cyan-400 uppercase tracking-wider block">
-                  Control Panel
-                </span>
-              </div>
-            )}
+            <div className={`overflow-hidden ${isCollapsed ? 'lg:hidden' : 'block'}`}>
+              <h1 className="font-bold text-base tracking-tight text-slate-900 dark:text-white whitespace-nowrap leading-tight">
+                Kea DHCP UI
+              </h1>
+              <span className="text-[11px] font-semibold text-cyan-600 dark:text-cyan-400 uppercase tracking-wider block">
+                Control Panel
+              </span>
+            </div>
           </div>
 
           {/* Close button for mobile drawer */}
@@ -125,11 +123,9 @@ export function Sidebar({ isOpen, onClose, isCollapsed }) {
                       : 'text-slate-400 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-300'
                   }`}
                 />
-                {!isCollapsed && (
-                  <span className="whitespace-nowrap">
-                    {item.label}
-                  </span>
-                )}
+                <span className={`whitespace-nowrap ${isCollapsed ? 'lg:hidden' : 'inline-block'}`}>
+                  {item.label}
+                </span>
               </NavLink>
             );
           })}
