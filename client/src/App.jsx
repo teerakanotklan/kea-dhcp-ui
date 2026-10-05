@@ -35,6 +35,17 @@ export function AppContent() {
   const [serviceStatus, setServiceStatus] = useState(null);
   const [notification, setNotification] = useState(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    return localStorage.getItem('dhcp_sidebar_collapsed') === 'true';
+  });
+
+  const toggleSidebarCollapse = () => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem('dhcp_sidebar_collapsed', String(next));
+      return next;
+    });
+  };
 
   // Apply theme instantly without transition lag/delay
   useEffect(() => {
@@ -103,6 +114,7 @@ export function AppContent() {
                 <Sidebar
                   isOpen={mobileMenuOpen}
                   onClose={() => setMobileMenuOpen(false)}
+                  isCollapsed={sidebarCollapsed}
                 />
 
                 <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
@@ -110,6 +122,8 @@ export function AppContent() {
                     theme={theme}
                     toggleTheme={toggleTheme}
                     onOpenMobileMenu={() => setMobileMenuOpen(true)}
+                    isCollapsed={sidebarCollapsed}
+                    onToggleCollapse={toggleSidebarCollapse}
                   />
 
                   <main className="flex-1 min-h-0 overflow-y-auto flex flex-col">

@@ -1,7 +1,7 @@
 import React from 'react';
 import { useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Moon, Sun, LogOut, Menu, ChevronRight } from 'lucide-react';
+import { Moon, Sun, LogOut, Menu, ChevronRight, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 
 function getBreadcrumbs(pathname) {
   if (pathname === '/' || pathname === '/dashboard') {
@@ -57,14 +57,14 @@ function getBreadcrumbs(pathname) {
   return [{ label: 'Dashboard', to: '/' }];
 }
 
-export function Navbar({ theme, toggleTheme, onOpenMobileMenu }) {
+export function Navbar({ theme, toggleTheme, onOpenMobileMenu, isCollapsed, onToggleCollapse }) {
   const { user, logout } = useAuth();
   const location = useLocation();
   const breadcrumbs = getBreadcrumbs(location.pathname);
 
   return (
     <header className="sticky top-0 z-30 h-16 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200/80 dark:border-white/10 px-4 sm:px-6 lg:px-8 flex items-center justify-between shadow-sm dark:shadow-none gap-4">
-      {/* Left side: Hamburger button on mobile + Dynamic Breadcrumbs */}
+      {/* Left side: Hamburger button on mobile / Desktop sidebar toggle + Dynamic Breadcrumbs */}
       <div className="flex items-center gap-2 sm:gap-3 min-w-0">
         <button
           className="lg:hidden p-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors shrink-0"
@@ -72,6 +72,16 @@ export function Navbar({ theme, toggleTheme, onOpenMobileMenu }) {
           aria-label="Open navigation menu"
         >
           <Menu size={20} />
+        </button>
+
+        {/* Desktop Sidebar Collapse Toggle */}
+        <button
+          className="hidden lg:flex p-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors shrink-0"
+          onClick={onToggleCollapse}
+          title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          {isCollapsed ? <PanelLeftOpen size={19} /> : <PanelLeftClose size={19} />}
         </button>
 
         {/* Breadcrumb Navigation on TopNav */}

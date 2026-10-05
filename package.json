@@ -10,6 +10,7 @@
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "build": "npm --prefix client run build",
     "verify": "node server/scripts/test-verify.js",
+    "deploy:remote": "python scripts/deploy.py",
     "install:all": "npm install && npm --prefix server install && npm --prefix client install"
   },
   "devDependencies": {
