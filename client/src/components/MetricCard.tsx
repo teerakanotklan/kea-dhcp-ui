@@ -1,7 +1,26 @@
-import React from 'react';
+import React, { ReactNode, ComponentType } from 'react';
+import { LucideProps } from 'lucide-react';
 
-export function MetricCard({ title, value, subtext, icon: Icon, color = 'indigo', progress = null }) {
-  const colorMap = {
+export type MetricColor = 'indigo' | 'cyan' | 'emerald' | 'amber';
+
+export interface MetricCardProps {
+  title: string;
+  value: ReactNode;
+  subtext?: ReactNode;
+  icon?: ComponentType<LucideProps>;
+  color?: MetricColor;
+  progress?: number | null;
+}
+
+export function MetricCard({
+  title,
+  value,
+  subtext,
+  icon: Icon,
+  color = 'indigo',
+  progress = null
+}: MetricCardProps) {
+  const colorMap: Record<MetricColor, { bg: string; bar: string }> = {
     indigo: {
       bg: 'bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400',
       bar: 'bg-gradient-to-r from-indigo-500 to-indigo-400'

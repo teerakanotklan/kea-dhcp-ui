@@ -1,30 +1,38 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, FormEvent } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { Pagination } from '../components/Pagination';
 import { ActionDropdown } from '../components/ActionDropdown';
-import { SortableTh, EmptyState, EmptyStateRow, CopyText, TableSkeleton } from '../components/TableParts';
+import { SortableTh, EmptyStateRow, CopyText, TableSkeleton, NotificationState } from '../components/TableParts';
 import { usePersistedState } from '../hooks/usePersistedState';
-import { useSortableData } from '../hooks/useSortableData';
+import { useSortableData, ColumnsConfig } from '../hooks/useSortableData';
 import {
   Wifi,
   Search,
   RefreshCw,
   Download,
-  Clock,
   RotateCcw,
   Bookmark,
   BookmarkPlus,
   X,
   Copy
 } from 'lucide-react';
+import { DhcpLease, Subnet } from '@shared';
 
-const formatDateTime = (dateStr) => {
+export interface LeasesProps {
+  setNotification?: (notif: NotificationState) => void;
+}
+
+interface ExtendedLease extends DhcpLease {
+  isReserved?: boolean;
+}
+
+const formatDateTime = (dateStr?: string | null): string => {
   if (!dateStr) return '—';
   try {
     const d = new Date(dateStr);
     if (isNaN(d.getTime())) return '—';
-    const pad = (n) => String(n).padStart(2, '0');
+    const pad = (n: number) => String(n).padStart(2, '0');
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
   } catch {
     return '—';
@@ -39,36 +47,35 @@ const STATUS_TABS = [
   { id: 'declined', label: 'Declined' }
 ];
 
-const SORT_COLUMNS = {
+const SORT_COLUMNS: ColumnsConfig<ExtendedLease> = {
   ip: { get: (l) => l.ip, type: 'ip' },
   mac: { get: (l) => l.mac, type: 'string' },
-  hostname: { get: (l) => l.hostname, type: 'string' },
+  hostname: { get: (l) => l.hostname || '', type: 'string' },
   status: { get: (l) => l.status, type: 'string' },
-  starts: { get: (l) => l.starts, type: 'date' },
-  ends: { get: (l) => l.ends, type: 'date' }
+  starts: { get: (l) => l.starts || '', type: 'date' },
+  ends: { get: (l) => l.ends || '', type: 'date' }
 };
 
-export function Leases({ setNotification }) {
+export function Leases({ setNotification }: LeasesProps) {
   const { apiFetch } = useAuth();
-  const [leases, setLeases] = useState([]);
+  const [leases, setLeases] = useState<ExtendedLease[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = usePersistedState('leases.search', '');
-  const [statusFilter, setStatusFilter] = usePersistedState('leases.status', 'all');
-  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [search, setSearch] = usePersistedState<string>('leases.search', '');
+  const [statusFilter, setStatusFilter] = usePersistedState<string>('leases.status', 'all');
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = usePersistedState('leases.pageSize', 25);
+  const [pageSize, setPageSize] = usePersistedState<number>('leases.pageSize', 25);
 
   // Release state
-  const [releaseTarget, setReleaseTarget] = useState(null);
+  const [releaseTarget, setReleaseTarget] = useState<string | null>(null);
   const [releasing, setReleasing] = useState(false);
 
   // Convert to Reserve state & Modal
-  const [reserveTarget, setReserveTarget] = useState(null);
+  const [reserveTarget, setReserveTarget] = useState<ExtendedLease | null>(null);
   const [reserveHostname, setReserveHostname] = useState('');
   const [reserveSubnetId, setReserveSubnetId] = useState('');
-  const [scopes, setScopes] = useState([]);
+  const [scopes, setScopes] = useState<Subnet[]>([]);
   const [reserving, setReserving] = useState(false);
 
   const fetchLeases = async () => {
@@ -82,12 +89,15 @@ export function Leases({ setNotification }) {
       const data = await res.json();
       // Conflicting leases are shown as normal active leases
       setLeases(
-        (data.leases || []).map((l) =>
+        (data.leases || []).map((l: ExtendedLease) =>
           l.status === 'conflict' ? { ...l, status: 'active', isConflict: false } : l
         )
       );
-    } catch (err) {
-      if (setNotification) setNotification({ type: 'danger', message: err.message });
+    } catch (err: unknown) {
+      if (setNotification) {
+        const msg = err instanceof Error ? err.message : 'Error fetching leases';
+        setNotification({ type: 'error', message: msg });
+      }
     } finally {
       setLoading(false);
     }
@@ -98,7 +108,7 @@ export function Leases({ setNotification }) {
       const res = await apiFetch('/api/scopes');
       const data = await res.json();
       setScopes(Array.isArray(data) ? data : []);
-    } catch (err) {
+    } catch {
       // Scopes fetch failed non-blocking
     }
   };
@@ -112,7 +122,7 @@ export function Leases({ setNotification }) {
     return () => clearInterval(interval);
   }, [statusFilter]);
 
-  const handleSearchSubmit = (e) => {
+  const handleSearchSubmit = (e: FormEvent) => {
     e.preventDefault();
     setCurrentPage(1);
     fetchLeases();
@@ -134,11 +144,10 @@ export function Leases({ setNotification }) {
 
   const confirmRelease = async () => {
     if (!releaseTarget) return;
-    const ip = typeof releaseTarget === 'object' ? releaseTarget.ip : releaseTarget;
 
     try {
       setReleasing(true);
-      const res = await apiFetch(`/api/leases/${ip}/release`, {
+      const res = await apiFetch(`/api/leases/${releaseTarget}/release`, {
         method: 'POST',
       });
       const data = await res.json();
@@ -146,8 +155,11 @@ export function Leases({ setNotification }) {
 
       if (setNotification) setNotification({ type: 'success', message: data.message });
       fetchLeases();
-    } catch (err) {
-      if (setNotification) setNotification({ type: 'danger', message: err.message });
+    } catch (err: unknown) {
+      if (setNotification) {
+        const msg = err instanceof Error ? err.message : 'Release failed';
+        setNotification({ type: 'error', message: msg });
+      }
     } finally {
       setReleasing(false);
       setReleaseTarget(null);
@@ -155,14 +167,14 @@ export function Leases({ setNotification }) {
   };
 
   // Open Convert to Reserve modal
-  const openReserveModal = (lease) => {
+  const openReserveModal = (lease: ExtendedLease) => {
     setReserveTarget(lease);
     setReserveHostname(lease.hostname || '');
     setReserveSubnetId(String(lease.subnetId || ''));
   };
 
   // Confirm Convert to Reserve
-  const handleConfirmReservation = async (e) => {
+  const handleConfirmReservation = async (e: FormEvent) => {
     e.preventDefault();
     if (!reserveTarget) return;
 
@@ -190,8 +202,11 @@ export function Leases({ setNotification }) {
 
       setReserveTarget(null);
       fetchLeases();
-    } catch (err) {
-      if (setNotification) setNotification({ type: 'danger', message: err.message });
+    } catch (err: unknown) {
+      if (setNotification) {
+        const msg = err instanceof Error ? err.message : 'Reservation failed';
+        setNotification({ type: 'error', message: msg });
+      }
     } finally {
       setReserving(false);
     }
@@ -220,7 +235,7 @@ export function Leases({ setNotification }) {
     document.body.removeChild(link);
   };
 
-  const renderStatusBadge = (lease) => {
+  const renderStatusBadge = (lease: ExtendedLease) => {
     const st = lease.status || 'active';
     if (st === 'reserved' || lease.isReserved) {
       return (
@@ -422,7 +437,7 @@ export function Leases({ setNotification }) {
                                 if (setNotification) setNotification({ type: 'success', message: `Copied ${l.ip}` });
                               }
                             },
-                            l.mac && {
+                            Boolean(l.mac) && {
                               label: 'Copy MAC Address',
                               icon: Copy,
                               onClick: () => {
@@ -480,7 +495,7 @@ export function Leases({ setNotification }) {
         variant="danger"
         icon={RotateCcw}
         title="Release Lease"
-        message={`Release the active lease for ${typeof releaseTarget === 'object' ? releaseTarget?.ip : releaseTarget}? The client will lose this address and must request a new one from the DHCP pool.`}
+        message={`Release the active lease for ${releaseTarget}? The client will lose this address and must request a new one from the DHCP pool.`}
         confirmText="Release Lease"
         loadingText="Releasing..."
         loading={releasing}
@@ -518,7 +533,7 @@ export function Leases({ setNotification }) {
                     IP Address
                   </span>
                   <div className="font-mono font-bold text-sm text-slate-900 dark:text-white">
-                    {reserveTarget.ip}
+                    {reserveTarget?.ip}
                   </div>
                 </div>
 
@@ -527,7 +542,7 @@ export function Leases({ setNotification }) {
                     Hardware MAC
                   </span>
                   <div className="font-mono font-bold text-sm text-slate-900 dark:text-white">
-                    {reserveTarget.mac}
+                    {reserveTarget?.mac}
                   </div>
                 </div>
               </div>

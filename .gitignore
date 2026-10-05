@@ -20,6 +20,7 @@ dist
 dist-ssr
 client/dist
 *.local
+*.tsbuildinfo
 
 # Editor directories and files
 .vscode/*

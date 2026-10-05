@@ -4,9 +4,9 @@ import { useAuth } from '../../context/AuthContext';
 import { ConfirmModal } from '../../components/ConfirmModal';
 import { ActionDropdown } from '../../components/ActionDropdown';
 import { Pagination } from '../../components/Pagination';
-import { SortableTh, EmptyState, EmptyStateRow, TableSkeleton } from '../../components/TableParts';
+import { SortableTh, EmptyStateRow, TableSkeleton, NotificationState } from '../../components/TableParts';
 import { usePersistedState } from '../../hooks/usePersistedState';
-import { useSortableData } from '../../hooks/useSortableData';
+import { useSortableData, ColumnsConfig } from '../../hooks/useSortableData';
 import {
   Plus,
   Search,
@@ -17,12 +17,17 @@ import {
   Trash2,
   X
 } from 'lucide-react';
+import { Subnet } from '@shared';
 
-const getCidr = (sub) => {
+export interface ScopesProps {
+  setNotification?: (notif: NotificationState) => void;
+}
+
+const getCidr = (sub: Subnet): string => {
   if (sub.subnetCidr) return sub.subnetCidr;
   if (!sub.subnet) return '';
   if (sub.netmask) {
-    const maskMap = {
+    const maskMap: Record<string, string> = {
       '255.255.255.0': '/24',
       '255.255.0.0': '/16',
       '255.0.0.0': '/8',
@@ -38,7 +43,7 @@ const getCidr = (sub) => {
   return sub.subnet;
 };
 
-const SORT_COLUMNS = {
+const SORT_COLUMNS: ColumnsConfig<Subnet> = {
   name: { get: (s) => s.name || '', type: 'string' },
   cidr: { get: (s) => s.subnetCidr || getCidr(s), type: 'string' },
   range: { get: (s) => s.rangeStart || '', type: 'ip' },
@@ -46,18 +51,18 @@ const SORT_COLUMNS = {
   status: { get: (s) => (s.disabled ? 'disabled' : s.rangeStart ? 'active' : 'static'), type: 'string' }
 };
 
-export function Scopes({ setNotification }) {
+export function Scopes({ setNotification }: ScopesProps) {
   const { apiFetch } = useAuth();
   const navigate = useNavigate();
-  const [scopes, setScopes] = useState([]);
+  const [scopes, setScopes] = useState<Subnet[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = usePersistedState('scopes.search', '');
+  const [search, setSearch] = usePersistedState<string>('scopes.search', '');
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = usePersistedState('scopes.pageSize', 25);
+  const [pageSize, setPageSize] = usePersistedState<number>('scopes.pageSize', 25);
 
-  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState<Subnet | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
-  const [disableTarget, setDisableTarget] = useState(null);
+  const [disableTarget, setDisableTarget] = useState<Subnet | null>(null);
   const [disableLoading, setDisableLoading] = useState(false);
 
   const fetchScopes = async () => {
@@ -66,8 +71,11 @@ export function Scopes({ setNotification }) {
       const res = await apiFetch('/api/scopes');
       const data = await res.json();
       setScopes(Array.isArray(data) ? data : []);
-    } catch (err) {
-      if (setNotification) setNotification({ type: 'danger', message: err.message });
+    } catch (err: unknown) {
+      if (setNotification) {
+        const msg = err instanceof Error ? err.message : 'Failed to fetch scopes';
+        setNotification({ type: 'error', message: msg });
+      }
     } finally {
       setLoading(false);
     }
@@ -79,7 +87,7 @@ export function Scopes({ setNotification }) {
     return () => clearInterval(interval);
   }, []);
 
-  const handleToggle = async (scope, { fromModal = false } = {}) => {
+  const handleToggle = async (scope: Subnet, { fromModal = false } = {}) => {
     try {
       if (fromModal) setDisableLoading(true);
       const res = await apiFetch(`/api/scopes/${scope.id || scope.subnet}/toggle`, {
@@ -95,8 +103,11 @@ export function Scopes({ setNotification }) {
         });
       }
       fetchScopes();
-    } catch (err) {
-      if (setNotification) setNotification({ type: 'danger', message: err.message });
+    } catch (err: unknown) {
+      if (setNotification) {
+        const msg = err instanceof Error ? err.message : 'Toggle failed';
+        setNotification({ type: 'error', message: msg });
+      }
     } finally {
       if (fromModal) {
         setDisableLoading(false);
@@ -121,8 +132,11 @@ export function Scopes({ setNotification }) {
       }
       setDeleteTarget(null);
       fetchScopes();
-    } catch (err) {
-      if (setNotification) setNotification({ type: 'danger', message: err.message });
+    } catch (err: unknown) {
+      if (setNotification) {
+        const msg = err instanceof Error ? err.message : 'Delete failed';
+        setNotification({ type: 'error', message: msg });
+      }
     } finally {
       setDeleteLoading(false);
     }
@@ -220,88 +234,89 @@ export function Scopes({ setNotification }) {
                 <TableSkeleton rows={8} cols={7} />
               ) : (
                 paginatedScopes.map((sub, index) => {
-                const isConfigured = Boolean(sub.rangeStart && sub.rangeEnd);
-                const isDisabled = Boolean(sub.disabled);
-                const resCount = sub.reservations?.length || 0;
-                const absoluteIndex = (currentPage - 1) * pageSize + index + 1;
+                  const isConfigured = Boolean(sub.rangeStart && sub.rangeEnd);
+                  const isDisabled = Boolean(sub.disabled);
+                  const resCount = sub.reservations?.length || 0;
+                  const absoluteIndex = (currentPage - 1) * pageSize + index + 1;
 
-                return (
-                  <tr key={sub.id || sub.subnet}>
-                    {/* No. */}
-                    <td className="text-center font-mono text-xs text-slate-400 dark:text-slate-500">
-                      {absoluteIndex}
-                    </td>
+                  return (
+                    <tr key={sub.id || sub.subnet}>
+                      {/* No. */}
+                      <td className="text-center font-mono text-xs text-slate-400 dark:text-slate-500">
+                        {absoluteIndex}
+                      </td>
 
-                    {/* Scope Name */}
-                    <td className={`font-semibold text-sm ${isDisabled ? 'text-slate-500 dark:text-slate-400' : 'text-slate-900 dark:text-white'}`}>
-                      {sub.name || <span className="text-slate-400">-</span>}
-                    </td>
+                      {/* Scope Name */}
+                      <td className={`font-semibold text-sm ${isDisabled ? 'text-slate-500 dark:text-slate-400' : 'text-slate-900 dark:text-white'}`}>
+                        {sub.name || <span className="text-slate-400">-</span>}
+                      </td>
 
-                    {/* CIDR */}
-                    <td className="font-mono text-sm text-cyan-600 dark:text-cyan-400 font-bold">
-                      {sub.subnetCidr || getCidr(sub) || <span className="text-slate-400">-</span>}
-                    </td>
+                      {/* CIDR */}
+                      <td className="font-mono text-sm text-cyan-600 dark:text-cyan-400 font-bold">
+                        {sub.subnetCidr || getCidr(sub) || <span className="text-slate-400">-</span>}
+                      </td>
 
-                    {/* Pool Range */}
-                    <td className="font-mono text-xs text-slate-600 dark:text-slate-400">
-                      {sub.rangeStart && sub.rangeEnd ? `${sub.rangeStart} - ${sub.rangeEnd}` : <span className="text-slate-400 italic">None</span>}
-                    </td>
+                      {/* Pool Range */}
+                      <td className="font-mono text-xs text-slate-600 dark:text-slate-400">
+                        {sub.rangeStart && sub.rangeEnd ? `${sub.rangeStart} - ${sub.rangeEnd}` : <span className="text-slate-400 italic">None</span>}
+                      </td>
 
-                    {/* Static Reservations */}
-                    <td>
-                      <Link
-                        to={`/scopes/${sub.id || sub.subnet}/edit`}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 transition-colors"
-                      >
-                        {resCount} reserved
-                      </Link>
-                    </td>
+                      {/* Static Reservations */}
+                      <td>
+                        <Link
+                          to={`/scopes/${sub.id || sub.subnet}/edit`}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 transition-colors"
+                        >
+                          {resCount} reserved
+                        </Link>
+                      </td>
 
-                    {/* Status */}
-                    <td>
-                      {isDisabled ? (
-                        <span className="badge badge-danger">
-                          Disabled
-                        </span>
-                      ) : isConfigured ? (
-                        <span className="badge badge-active">
-                          <span className="pulse-dot" />
-                          Active
-                        </span>
-                      ) : (
-                        <span className="badge badge-warning">
-                          Static Only
-                        </span>
-                      )}
-                    </td>
+                      {/* Status */}
+                      <td>
+                        {isDisabled ? (
+                          <span className="badge badge-danger">
+                            Disabled
+                          </span>
+                        ) : isConfigured ? (
+                          <span className="badge badge-active">
+                            <span className="pulse-dot" />
+                            Active
+                          </span>
+                        ) : (
+                          <span className="badge badge-warning">
+                            Static Only
+                          </span>
+                        )}
+                      </td>
 
-                    {/* Action Dropdown */}
-                    <td className="text-right">
-                      <ActionDropdown
-                        items={[
-                          {
-                            label: 'Edit Scope',
-                            icon: Edit2,
-                            onClick: () => navigate(`/scopes/${sub.id || sub.subnet}/edit`)
-                          },
-                          {
-                            label: isDisabled ? 'Enable Scope' : 'Disable Scope',
-                            icon: isDisabled ? Power : PowerOff,
-                            onClick: () => (isDisabled ? handleToggle(sub) : setDisableTarget(sub))
-                          },
-                          { separator: true },
-                          {
-                            label: 'Delete Scope',
-                            icon: Trash2,
-                            danger: true,
-                            onClick: () => setDeleteTarget(sub)
-                          }
-                        ]}
-                      />
-                    </td>
-                  </tr>
-                );
-              }))}
+                      {/* Action Dropdown */}
+                      <td className="text-right">
+                        <ActionDropdown
+                          items={[
+                            {
+                              label: 'Edit Scope',
+                              icon: Edit2,
+                              onClick: () => navigate(`/scopes/${sub.id || sub.subnet}/edit`)
+                            },
+                            {
+                              label: isDisabled ? 'Enable Scope' : 'Disable Scope',
+                              icon: isDisabled ? Power : PowerOff,
+                              onClick: () => (isDisabled ? handleToggle(sub) : setDisableTarget(sub))
+                            },
+                            { separator: true },
+                            {
+                              label: 'Delete Scope',
+                              icon: Trash2,
+                              danger: true,
+                              onClick: () => setDeleteTarget(sub)
+                            }
+                          ]}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
 
               {filteredScopes.length === 0 && !loading && (
                 <EmptyStateRow
@@ -352,7 +367,7 @@ export function Scopes({ setNotification }) {
       <ConfirmModal
         isOpen={Boolean(disableTarget)}
         onClose={() => setDisableTarget(null)}
-        onConfirm={() => handleToggle(disableTarget, { fromModal: true })}
+        onConfirm={() => handleToggle(disableTarget!, { fromModal: true })}
         title="Disable Scope"
         message={`Are you sure you want to disable scope "${disableTarget?.name || disableTarget?.subnet}"? Clients will no longer receive IP addresses from this scope.`}
         confirmText="Disable Scope"

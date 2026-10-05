@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import { Navbar } from './components/Navbar';
@@ -15,9 +15,10 @@ import { ServiceLogs } from './pages/ServiceLogs';
 import { LogDetail } from './pages/LogDetail';
 import { NotFound } from './pages/NotFound';
 import { CheckCircle2, AlertTriangle, X } from 'lucide-react';
+import { NotificationState } from '@shared';
 
 // ProtectedRoute guard with Auth.js-style callbackUrl redirection
-function ProtectedRoute({ children }) {
+function ProtectedRoute({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const location = useLocation();
 
@@ -26,14 +27,15 @@ function ProtectedRoute({ children }) {
     return <Navigate to={`/login?callbackUrl=${callbackUrl}`} replace />;
   }
 
-  return children;
+  return <>{children}</>;
 }
 
 export function AppContent() {
-  const { user, loading, apiFetch } = useAuth();
+  const { user, apiFetch } = useAuth();
   const [theme, setTheme] = useState(() => localStorage.getItem('dhcp_theme') || 'dark');
-  const [serviceStatus, setServiceStatus] = useState(null);
-  const [notification, setNotification] = useState(null);
+  const [, setServiceStatus] = useState<unknown>(null);
+  const [notification, setNotification] = useState<NotificationState | null>(null);
+  const triggerNotification = (notif: NotificationState) => setNotification(notif);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     return localStorage.getItem('dhcp_sidebar_collapsed') === 'true';
@@ -83,7 +85,7 @@ export function AppContent() {
       const resStatus = await apiFetch('/api/service/status');
       const statusData = await resStatus.json();
       setServiceStatus(statusData);
-    } catch (e) {
+    } catch {
       // background poll errors can fail gracefully
     }
   };
@@ -95,8 +97,6 @@ export function AppContent() {
       return () => clearInterval(interval);
     }
   }, [user]);
-
-
 
   return (
     <>
@@ -129,24 +129,24 @@ export function AppContent() {
                   <main className="flex-1 min-h-0 overflow-y-auto flex flex-col">
                     <Routes>
                       {/* Dashboard */}
-                      <Route path="/" element={<Dashboard setNotification={setNotification} />} />
+                      <Route path="/" element={<Dashboard setNotification={triggerNotification} />} />
 
                       {/* Scopes Multi-Page */}
-                      <Route path="/scopes" element={<Scopes setNotification={setNotification} />} />
-                      <Route path="/scopes/add" element={<ScopeForm setNotification={setNotification} />} />
-                      <Route path="/scopes/:id/edit" element={<ScopeForm setNotification={setNotification} />} />
+                      <Route path="/scopes" element={<Scopes setNotification={triggerNotification} />} />
+                      <Route path="/scopes/add" element={<ScopeForm setNotification={triggerNotification} />} />
+                      <Route path="/scopes/:id/edit" element={<ScopeForm setNotification={triggerNotification} />} />
                       {/* Static IP Multi-Page */}
-                      <Route path="/static-hosts" element={<StaticIP setNotification={setNotification} />} />
-                      <Route path="/static-hosts/add" element={<StaticIPForm setNotification={setNotification} />} />
-                      <Route path="/static-hosts/:id/edit" element={<StaticIPForm setNotification={setNotification} />} />
+                      <Route path="/static-hosts" element={<StaticIP setNotification={triggerNotification} />} />
+                      <Route path="/static-hosts/add" element={<StaticIPForm setNotification={triggerNotification} />} />
+                      <Route path="/static-hosts/:id/edit" element={<StaticIPForm setNotification={triggerNotification} />} />
 
                       {/* Leases & Logs */}
-                      <Route path="/leases" element={<Leases setNotification={setNotification} />} />
-                      <Route path="/logs" element={<ServiceLogs setNotification={setNotification} />} />
-                      <Route path="/logs/:id" element={<LogDetail setNotification={setNotification} />} />
+                      <Route path="/leases" element={<Leases setNotification={triggerNotification} />} />
+                      <Route path="/logs" element={<ServiceLogs setNotification={triggerNotification} />} />
+                      <Route path="/logs/:id" element={<LogDetail setNotification={triggerNotification} />} />
 
                       {/* Settings */}
-                      <Route path="/settings" element={<Settings setNotification={setNotification} />} />
+                      <Route path="/settings" element={<Settings setNotification={triggerNotification} />} />
 
                       {/* Fallback 404 Error Page */}
                       <Route path="*" element={<NotFound />} />
@@ -164,12 +164,12 @@ export function AppContent() {
         <div className="toast-container">
           <div
             className={`toast ${
-              notification.type === 'danger'
+              notification.type === 'error' || notification.type === 'danger'
                 ? 'border-rose-500/40'
                 : 'border-emerald-500/40'
             }`}
           >
-            {notification.type === 'danger' ? (
+            {notification.type === 'error' || notification.type === 'danger' ? (
               <AlertTriangle size={20} className="text-rose-500 shrink-0" />
             ) : (
               <CheckCircle2 size={20} className="text-emerald-500 shrink-0" />

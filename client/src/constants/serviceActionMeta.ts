@@ -1,11 +1,20 @@
-// Shared metadata for isc-dhcp-server service control confirmations
-export const SERVICE_ACTION_META = {
+import { ServiceAction } from '@shared';
+
+export interface ServiceActionInfo {
+  variant: 'warning' | 'danger' | 'primary';
+  title: string;
+  confirmText: string;
+  loadingText: string;
+  message: string;
+}
+
+export const SERVICE_ACTION_META: Record<ServiceAction, ServiceActionInfo> = {
   restart: {
     variant: 'warning',
     title: 'Restart Service',
     confirmText: 'Restart Service',
     loadingText: 'Restarting...',
-    message: "Restart isc-dhcp-server? Clients may briefly lose DHCP responses while the daemon restarts.",
+    message: 'Restart isc-dhcp-server? Clients may briefly lose DHCP responses while the daemon restarts.',
   },
   reload: {
     variant: 'warning',

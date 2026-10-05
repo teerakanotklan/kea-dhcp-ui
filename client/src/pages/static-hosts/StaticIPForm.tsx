@@ -1,14 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, FormEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import {
-  BookmarkCheck,
-  Save,
-  Wand2,
-  Network
-} from 'lucide-react';
+import { BookmarkCheck, Save, Wand2, Network } from 'lucide-react';
+import { Subnet, StaticHostFormData } from '@shared';
 
-const maskToCidr = (mask) => {
+interface NotificationState {
+  type: 'success' | 'danger' | 'warning' | 'info';
+  message: string;
+}
+
+export interface StaticIPFormProps {
+  setNotification: (notif: NotificationState) => void;
+}
+
+const maskToCidr = (mask?: string): number | null => {
   const parts = (mask || '').split('.').map(Number);
   if (parts.length !== 4 || parts.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return null;
   const bits = parts.map((n) => n.toString(2).padStart(8, '0')).join('');
@@ -17,19 +22,19 @@ const maskToCidr = (mask) => {
   return firstZero === -1 ? 32 : firstZero;
 };
 
-const getCidr = (s) => {
+const getCidr = (s: Subnet): string => {
   const prefix = maskToCidr(s.netmask);
   return prefix === null ? s.subnet : `${s.subnet}/${prefix}`;
 };
 
-const ipToLong = (ip) => {
+const ipToLong = (ip?: string): number => {
   if (!ip) return 0;
   const parts = ip.split('.').map(Number);
   if (parts.length !== 4 || parts.some((n) => isNaN(n) || n < 0 || n > 255)) return 0;
   return ((parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]) >>> 0;
 };
 
-const isIpInSubnet = (ip, subnet, netmask) => {
+const isIpInSubnet = (ip?: string, subnet?: string, netmask?: string): boolean => {
   if (!ip || !subnet || !netmask) return false;
   const ipL = ipToLong(ip);
   const subL = ipToLong(subnet);
@@ -38,19 +43,19 @@ const isIpInSubnet = (ip, subnet, netmask) => {
   return (ipL & maskL) === (subL & maskL);
 };
 
-export function StaticIPForm({ setNotification }) {
-  const { id, name: paramName } = useParams();
+export function StaticIPForm({ setNotification }: StaticIPFormProps) {
+  const { id, name: paramName } = useParams<{ id?: string; name?: string }>();
   const hostIdentifier = id || paramName;
   const isEdit = Boolean(hostIdentifier);
   const navigate = useNavigate();
   const { apiFetch } = useAuth();
 
-  const [loading, setLoading] = useState(isEdit);
+  const [, setLoading] = useState(isEdit);
   const [saving, setSaving] = useState(false);
-  const [subnets, setSubnets] = useState([]);
+  const [subnets, setSubnets] = useState<Subnet[]>([]);
   const [selectedScopeSubnet, setSelectedScopeSubnet] = useState('');
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<StaticHostFormData>({
     name: '',
     mac: '',
     ip: '',
@@ -61,13 +66,13 @@ export function StaticIPForm({ setNotification }) {
     // Fetch available subnets
     apiFetch('/api/scopes')
       .then((res) => res.json())
-      .then((data) => {
-        const scopeList = Array.isArray(data) ? data : [];
+      .then((data: unknown) => {
+        const scopeList = Array.isArray(data) ? (data as Subnet[]) : [];
         setSubnets(scopeList);
       })
       .catch(() => {});
 
-    if (!isEdit) return;
+    if (!isEdit || !hostIdentifier) return;
 
     const fetchHostData = async () => {
       try {
@@ -79,13 +84,14 @@ export function StaticIPForm({ setNotification }) {
         const found = await res.json();
 
         setFormData({
-          name: found.name,
-          mac: found.mac,
-          ip: found.ip,
+          name: found.name || '',
+          mac: found.mac || '',
+          ip: found.ip || '',
           description: found.description || '',
         });
-      } catch (err) {
-        setNotification({ type: 'danger', message: err.message });
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Error fetching host';
+        setNotification({ type: 'danger', message: msg });
         navigate('/static-hosts');
       } finally {
         setLoading(false);
@@ -93,7 +99,7 @@ export function StaticIPForm({ setNotification }) {
     };
 
     fetchHostData();
-  }, [hostIdentifier, isEdit]);
+  }, [hostIdentifier, isEdit, apiFetch, navigate, setNotification]);
 
   // Auto-detect scope when subnets or formData.ip changes
   useEffect(() => {
@@ -111,10 +117,10 @@ export function StaticIPForm({ setNotification }) {
     for (let i = 0; i < 3; i++) {
       mac += ':' + hex[Math.floor(Math.random() * 16)] + hex[Math.floor(Math.random() * 16)];
     }
-    setFormData((prev) => ({ ...prev, mac }));
+    setFormData((prev: StaticHostFormData) => ({ ...prev, mac }));
   };
 
-  const handleScopeSelect = (subnetValue) => {
+  const handleScopeSelect = (subnetValue: string) => {
     setSelectedScopeSubnet(subnetValue);
     if (!subnetValue) return;
     const targetScope = subnets.find((s) => s.subnet === subnetValue);
@@ -122,13 +128,13 @@ export function StaticIPForm({ setNotification }) {
       const parts = targetScope.subnet.split('.');
       if (parts.length === 4) {
         const suggestedIp = `${parts[0]}.${parts[1]}.${parts[2]}.`;
-        setFormData((prev) => ({ ...prev, ip: suggestedIp }));
+        setFormData((prev: StaticHostFormData) => ({ ...prev, ip: suggestedIp }));
       }
     }
   };
 
-  const handleIpChange = (newIp) => {
-    setFormData((prev) => ({ ...prev, ip: newIp }));
+  const handleIpChange = (newIp: string) => {
+    setFormData((prev: StaticHostFormData) => ({ ...prev, ip: newIp }));
     if (newIp && subnets.length > 0) {
       const match = subnets.find((s) => isIpInSubnet(newIp, s.subnet, s.netmask));
       if (match) {
@@ -137,12 +143,12 @@ export function StaticIPForm({ setNotification }) {
     }
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setSaving(true);
 
     try {
-      if (isEdit) {
+      if (isEdit && hostIdentifier) {
         const res = await apiFetch(`/api/static-hosts/${hostIdentifier}`, {
           method: 'PUT',
           body: JSON.stringify(formData),
@@ -160,16 +166,13 @@ export function StaticIPForm({ setNotification }) {
         setNotification({ type: 'success', message: `Host ${formData.name} created successfully` });
       }
       navigate('/static-hosts');
-    } catch (err) {
-      setNotification({ type: 'danger', message: err.message });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Operation failed';
+      setNotification({ type: 'danger', message: msg });
     } finally {
       setSaving(false);
     }
   };
-
-
-
-
 
   return (
     <div className="page-wrapper space-y-6">
@@ -302,7 +305,7 @@ export function StaticIPForm({ setNotification }) {
               type="text"
               className="input-text"
               placeholder="e.g. Finance Floor Printer - HP LaserJet"
-              value={formData.description}
+              value={formData.description || ''}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
             />
           </div>

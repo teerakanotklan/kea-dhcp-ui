@@ -1,21 +1,26 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { Plus, Edit2, Trash2, BookmarkCheck, Search, Copy, Check, Network, X } from 'lucide-react';
+import { Plus, Edit2, Trash2, BookmarkCheck, Search, Network, X } from 'lucide-react';
 import { ConfirmModal } from '../../components/ConfirmModal';
 import { Pagination } from '../../components/Pagination';
-import { SortableTh, EmptyState, EmptyStateRow, CopyText, TableSkeleton } from '../../components/TableParts';
+import { SortableTh, EmptyStateRow, CopyText, TableSkeleton, NotificationState } from '../../components/TableParts';
 import { usePersistedState } from '../../hooks/usePersistedState';
-import { useSortableData } from '../../hooks/useSortableData';
+import { useSortableData, ColumnsConfig } from '../../hooks/useSortableData';
+import { StaticHost, Subnet } from '@shared';
 
-const ipToLong = (ip) => {
+export interface StaticIPProps {
+  setNotification?: (notif: NotificationState) => void;
+}
+
+const ipToLong = (ip?: string): number => {
   if (!ip) return 0;
   const parts = ip.split('.').map(Number);
   if (parts.length !== 4 || parts.some((n) => isNaN(n) || n < 0 || n > 255)) return 0;
   return ((parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]) >>> 0;
 };
 
-const isIpInSubnet = (ip, subnet, netmask) => {
+const isIpInSubnet = (ip?: string, subnet?: string, netmask?: string): boolean => {
   if (!ip || !subnet || !netmask) return false;
   const ipL = ipToLong(ip);
   const subL = ipToLong(subnet);
@@ -24,28 +29,28 @@ const isIpInSubnet = (ip, subnet, netmask) => {
   return (ipL & maskL) === (subL & maskL);
 };
 
-const findMatchingScope = (ip, scopes) => {
-  if (!ip || !scopes || scopes.length === 0) return null;
+const findMatchingScope = (ip?: string, scopes?: Subnet[]): Subnet | undefined => {
+  if (!ip || !scopes || scopes.length === 0) return undefined;
   return scopes.find((s) => isIpInSubnet(ip, s.subnet, s.netmask));
 };
 
-const SORT_COLUMNS = {
+const SORT_COLUMNS: ColumnsConfig<StaticHost> = {
   name: { get: (h) => h.name || '', type: 'string' },
   mac: { get: (h) => h.mac || '', type: 'string' },
   ip: { get: (h) => h.ip || '', type: 'ip' },
   description: { get: (h) => h.description || '', type: 'string' }
 };
 
-export function StaticIP({ setNotification }) {
+export function StaticIP({ setNotification }: StaticIPProps) {
   const { apiFetch } = useAuth();
-  const [hosts, setHosts] = useState([]);
-  const [scopes, setScopes] = useState([]);
+  const [hosts, setHosts] = useState<StaticHost[]>([]);
+  const [scopes, setScopes] = useState<Subnet[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = usePersistedState('staticIP.search', '');
+  const [search, setSearch] = usePersistedState<string>('staticIP.search', '');
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = usePersistedState('staticIP.pageSize', 25);
+  const [pageSize, setPageSize] = usePersistedState<number>('staticIP.pageSize', 25);
 
-  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState<StaticHost | null>(null);
   const [deleting, setDeleting] = useState(false);
 
   const fetchHostsAndScopes = async () => {
@@ -59,8 +64,11 @@ export function StaticIP({ setNotification }) {
       const dataScopes = await resScopes.json();
       setHosts(Array.isArray(dataHosts) ? dataHosts : []);
       setScopes(Array.isArray(dataScopes) ? dataScopes : []);
-    } catch (err) {
-      if (setNotification) setNotification({ type: 'danger', message: err.message });
+    } catch (err: unknown) {
+      if (setNotification) {
+        const msg = err instanceof Error ? err.message : 'Failed to fetch data';
+        setNotification({ type: 'error', message: msg });
+      }
     } finally {
       setLoading(false);
     }
@@ -88,8 +96,11 @@ export function StaticIP({ setNotification }) {
       }
       setDeleteTarget(null);
       fetchHostsAndScopes();
-    } catch (err) {
-      if (setNotification) setNotification({ type: 'danger', message: err.message });
+    } catch (err: unknown) {
+      if (setNotification) {
+        const msg = err instanceof Error ? err.message : 'Failed to delete';
+        setNotification({ type: 'error', message: msg });
+      }
     } finally {
       setDeleting(false);
     }
@@ -189,70 +200,71 @@ export function StaticIP({ setNotification }) {
                 <TableSkeleton rows={8} cols={6} />
               ) : (
                 paginatedHosts.map((h) => {
-                const scope = findMatchingScope(h.ip, scopes);
-                return (
-                  <tr key={h.name}>
-                    <td>
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-7 h-7 rounded-lg bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
-                          <BookmarkCheck size={15} />
+                  const scope = findMatchingScope(h.ip, scopes);
+                  return (
+                    <tr key={h.name}>
+                      <td>
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-7 h-7 rounded-lg bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                            <BookmarkCheck size={15} />
+                          </div>
+                          <span className="font-semibold text-slate-900 dark:text-white text-xs sm:text-sm">{h.name}</span>
                         </div>
-                        <span className="font-semibold text-slate-900 dark:text-white text-xs sm:text-sm">{h.name}</span>
-                      </div>
-                    </td>
+                      </td>
 
-                    <td>
-                      {scope ? (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-200/50 dark:border-indigo-500/20">
-                          <Network size={12} />
-                          {scope.name || scope.subnet}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-slate-400 dark:text-slate-500">—</span>
-                      )}
-                    </td>
+                      <td>
+                        {scope ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-200/50 dark:border-indigo-500/20">
+                            <Network size={12} />
+                            {scope.name || scope.subnet}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-slate-400 dark:text-slate-500">—</span>
+                        )}
+                      </td>
 
-                    <td>
-                      <CopyText
-                        value={h.mac}
-                        setNotification={setNotification}
-                        className="font-mono text-slate-600 dark:text-slate-400 text-xs sm:text-sm"
-                      />
-                    </td>
+                      <td>
+                        <CopyText
+                          value={h.mac}
+                          setNotification={setNotification}
+                          className="font-mono text-slate-600 dark:text-slate-400 text-xs sm:text-sm"
+                        />
+                      </td>
 
-                    <td>
-                      <CopyText
-                        value={h.ip}
-                        setNotification={setNotification}
-                        className="font-mono font-bold text-cyan-600 dark:text-cyan-400 text-xs sm:text-sm"
-                      />
-                    </td>
+                      <td>
+                        <CopyText
+                          value={h.ip}
+                          setNotification={setNotification}
+                          className="font-mono font-bold text-cyan-600 dark:text-cyan-400 text-xs sm:text-sm"
+                        />
+                      </td>
 
-                    <td className="text-xs text-slate-500 dark:text-slate-400 max-w-xs truncate">
-                      {h.description || <span className="opacity-40">—</span>}
-                    </td>
+                      <td className="text-xs text-slate-500 dark:text-slate-400 max-w-xs truncate">
+                        {h.description || <span className="opacity-40">—</span>}
+                      </td>
 
-                    <td className="text-right">
-                      <div className="inline-flex items-center gap-1.5">
-                        <Link
-                          to={`/static-hosts/${h.id || encodeURIComponent(h.name)}/edit`}
-                          className="btn-icon"
-                          title="Edit Host"
-                        >
-                          <Edit2 size={14} />
-                        </Link>
-                        <button
-                          className="btn-icon text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10"
-                          onClick={() => setDeleteTarget(h)}
-                          title="Delete Host"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              }))}
+                      <td className="text-right">
+                        <div className="inline-flex items-center gap-1.5">
+                          <Link
+                            to={`/static-hosts/${h.id || encodeURIComponent(h.name)}/edit`}
+                            className="btn-icon"
+                            title="Edit Host"
+                          >
+                            <Edit2 size={14} />
+                          </Link>
+                          <button
+                            className="btn-icon text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10"
+                            onClick={() => setDeleteTarget(h)}
+                            title="Delete Host"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
 
               {filteredHosts.length === 0 && !loading && (
                 <EmptyStateRow

@@ -1,30 +1,59 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, FormEvent } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { ConfirmModal } from '../components/ConfirmModal';
 import {
   RotateCw,
-  RefreshCw,
   Power,
   Activity,
   Server,
   FileCode,
-  Shield,
   Clock,
   Save,
   Sliders,
   Globe,
   Radio
 } from 'lucide-react';
+import { NotificationState } from '../components/TableParts';
 
-export function Settings({ setNotification }) {
+export interface SettingsProps {
+  setNotification?: (notif: NotificationState) => void;
+}
+
+interface ServiceSubStatus {
+  service?: string;
+  active?: boolean;
+  pid?: number | string;
+  since?: string;
+}
+
+interface ServiceStatusState {
+  dhcp4?: ServiceSubStatus;
+  ctrlAgent?: ServiceSubStatus;
+}
+
+interface GlobalSettingsState {
+  defaultLeaseTime: number;
+  renewTimer: number;
+  rebindTimer: number;
+  authoritative: boolean;
+  domainName: string;
+  domainNameServers: string;
+}
+
+interface PendingActionState {
+  action: 'start' | 'stop' | 'restart';
+  target: 'all' | 'dhcp4' | 'ctrl-agent';
+}
+
+export function Settings({ setNotification }: SettingsProps) {
   const { apiFetch } = useAuth();
-  const [status, setStatus] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [status, setStatus] = useState<ServiceStatusState | null>(null);
+  const [, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
-  const [pendingAction, setPendingAction] = useState(null);
+  const [pendingAction, setPendingAction] = useState<PendingActionState | null>(null);
 
   // Global Settings state
-  const [settings, setSettings] = useState({
+  const [settings, setSettings] = useState<GlobalSettingsState>({
     defaultLeaseTime: 4000,
     renewTimer: 1000,
     rebindTimer: 2000,
@@ -41,8 +70,11 @@ export function Settings({ setNotification }) {
       const res = await apiFetch('/api/service/status');
       const data = await res.json();
       setStatus(data);
-    } catch (err) {
-      if (setNotification) setNotification({ type: 'danger', message: err.message });
+    } catch (err: unknown) {
+      if (setNotification) {
+        const msg = err instanceof Error ? err.message : 'Error fetching status';
+        setNotification({ type: 'error', message: msg });
+      }
     } finally {
       setLoading(false);
     }
@@ -54,8 +86,11 @@ export function Settings({ setNotification }) {
       const res = await apiFetch('/api/service/settings');
       const data = await res.json();
       setSettings(data);
-    } catch (err) {
-      if (setNotification) setNotification({ type: 'danger', message: err.message });
+    } catch (err: unknown) {
+      if (setNotification) {
+        const msg = err instanceof Error ? err.message : 'Error fetching settings';
+        setNotification({ type: 'error', message: msg });
+      }
     } finally {
       setSettingsLoading(false);
     }
@@ -66,7 +101,7 @@ export function Settings({ setNotification }) {
     fetchSettings();
   }, []);
 
-  const handleAction = (action, target = 'all') => {
+  const handleAction = (action: 'start' | 'stop' | 'restart', target: 'all' | 'dhcp4' | 'ctrl-agent' = 'all') => {
     setPendingAction({ action, target });
   };
 
@@ -86,15 +121,18 @@ export function Settings({ setNotification }) {
 
       if (setNotification) setNotification({ type: 'success', message: data.message });
       await fetchStatus();
-    } catch (err) {
-      if (setNotification) setNotification({ type: 'danger', message: err.message });
+    } catch (err: unknown) {
+      if (setNotification) {
+        const msg = err instanceof Error ? err.message : 'Action failed';
+        setNotification({ type: 'error', message: msg });
+      }
     } finally {
       setActionLoading(false);
       setPendingAction(null);
     }
   };
 
-  const handleSaveSettings = async (e) => {
+  const handleSaveSettings = async (e: FormEvent) => {
     e.preventDefault();
     try {
       setSavingSettings(true);
@@ -112,14 +150,15 @@ export function Settings({ setNotification }) {
           message: 'Kea DHCP global settings updated successfully and persisted to disk.',
         });
       }
-    } catch (err) {
-      if (setNotification) setNotification({ type: 'danger', message: err.message });
+    } catch (err: unknown) {
+      if (setNotification) {
+        const msg = err instanceof Error ? err.message : 'Failed to save settings';
+        setNotification({ type: 'error', message: msg });
+      }
     } finally {
       setSavingSettings(false);
     }
   };
-
-
 
   const dhcp4 = status?.dhcp4 || {};
   const ctrlAgent = status?.ctrlAgent || {};

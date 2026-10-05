@@ -6,6 +6,15 @@ import {
   ChevronsRight
 } from 'lucide-react';
 
+export interface PaginationProps {
+  currentPage?: number;
+  totalItems?: number;
+  pageSize?: number;
+  onPageChange: (page: number) => void;
+  onPageSizeChange?: (size: number) => void;
+  pageSizeOptions?: number[];
+}
+
 export function Pagination({
   currentPage = 1,
   totalItems = 0,
@@ -13,14 +22,14 @@ export function Pagination({
   onPageChange,
   onPageSizeChange,
   pageSizeOptions = [10, 25, 50, 100]
-}) {
+}: PaginationProps) {
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
   const startItem = totalItems === 0 ? 0 : (currentPage - 1) * pageSize + 1;
   const endItem = Math.min(totalItems, currentPage * pageSize);
 
   // Generate visible page numbers with smart ellipsis
-  const getPageNumbers = () => {
-    const pages = [];
+  const getPageNumbers = (): (number | string)[] => {
+    const pages: (number | string)[] = [];
     const maxVisible = 5;
     if (totalPages <= maxVisible + 2) {
       for (let i = 1; i <= totalPages; i++) pages.push(i);
@@ -99,7 +108,7 @@ export function Pagination({
                   ? 'bg-indigo-600 text-white shadow-sm'
                   : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-white/10'
               }`}
-              onClick={() => onPageChange(p)}
+              onClick={() => onPageChange(Number(p))}
             >
               {p}
             </button>

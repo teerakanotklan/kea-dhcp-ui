@@ -3,7 +3,13 @@ import { useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Moon, Sun, LogOut, Menu, ChevronRight, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 
-function getBreadcrumbs(pathname) {
+interface BreadcrumbItem {
+  label: string;
+  to?: string;
+  mono?: boolean;
+}
+
+function getBreadcrumbs(pathname: string): BreadcrumbItem[] {
   if (pathname === '/' || pathname === '/dashboard') {
     return [{ label: 'Dashboard', to: '/' }];
   }
@@ -11,7 +17,7 @@ function getBreadcrumbs(pathname) {
   if (pathname.startsWith('/scopes') || pathname.startsWith('/subnets')) {
     const isScopeUrl = pathname.startsWith('/scopes');
     const baseTo = isScopeUrl ? '/scopes' : '/subnets';
-    const crumbs = [{ label: 'Scopes', to: baseTo }];
+    const crumbs: BreadcrumbItem[] = [{ label: 'Scopes', to: baseTo }];
     if (pathname.endsWith('/add')) {
       crumbs.push({ label: 'Add New Scope' });
     } else if (pathname.includes('/edit')) {
@@ -27,7 +33,7 @@ function getBreadcrumbs(pathname) {
   }
 
   if (pathname.startsWith('/static-hosts')) {
-    const crumbs = [{ label: 'Static IPs', to: '/static-hosts' }];
+    const crumbs: BreadcrumbItem[] = [{ label: 'Static IPs', to: '/static-hosts' }];
     if (pathname === '/static-hosts/add') {
       crumbs.push({ label: 'Add Reservation' });
     } else if (pathname.includes('/edit')) {
@@ -57,7 +63,15 @@ function getBreadcrumbs(pathname) {
   return [{ label: 'Dashboard', to: '/' }];
 }
 
-export function Navbar({ theme, toggleTheme, onOpenMobileMenu, isCollapsed, onToggleCollapse }) {
+export interface NavbarProps {
+  theme: string;
+  toggleTheme: () => void;
+  onOpenMobileMenu: () => void;
+  isCollapsed: boolean;
+  onToggleCollapse: () => void;
+}
+
+export function Navbar({ theme, toggleTheme, onOpenMobileMenu, isCollapsed, onToggleCollapse }: NavbarProps) {
   const { user, logout } = useAuth();
   const location = useLocation();
   const breadcrumbs = getBreadcrumbs(location.pathname);

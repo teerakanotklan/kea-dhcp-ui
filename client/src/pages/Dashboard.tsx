@@ -7,19 +7,55 @@ import {
   Users,
   HardDrive,
   BookmarkCheck,
-  RefreshCw,
   Server,
   Activity,
-  RotateCw,
-  CheckCircle,
-  AlertCircle
+  RotateCw
 } from 'lucide-react';
+import { NotificationState } from '../components/TableParts';
+import { DhcpLease } from '@shared';
 
-export function Dashboard({ setNotification }) {
+export interface DashboardProps {
+  setNotification?: (notif: NotificationState) => void;
+}
+
+interface ServiceSubStatus {
+  service?: string;
+  active?: boolean;
+  pid?: number | string;
+}
+
+interface SubnetStatItem {
+  id?: string | number;
+  subnet: string;
+  cidr?: number;
+  reservationsCount?: number;
+  utilization: number;
+  range?: string;
+  activeLeases: number;
+  capacity: number;
+}
+
+interface DashboardApiData {
+  counts?: {
+    subnets?: number;
+    totalCapacity?: number;
+    activeLeases?: number;
+    staticHosts?: number;
+    utilizationPercentage?: number;
+  };
+  service?: {
+    dhcp4?: ServiceSubStatus;
+    ctrlAgent?: ServiceSubStatus;
+  };
+  subnetStats?: SubnetStatItem[];
+  recentLeases?: DhcpLease[];
+}
+
+export function Dashboard({ setNotification }: DashboardProps) {
   const navigate = useNavigate();
   const { apiFetch } = useAuth();
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<DashboardApiData | null>(null);
+  const [, setLoading] = useState(true);
   const [serviceActionLoading, setServiceActionLoading] = useState(false);
 
   const fetchDashboardData = async () => {
@@ -28,9 +64,10 @@ export function Dashboard({ setNotification }) {
       const res = await apiFetch('/api/dashboard');
       const json = await res.json();
       setData(json);
-    } catch (err) {
+    } catch (err: unknown) {
       if (setNotification) {
-        setNotification({ type: 'danger', message: err.message });
+        const msg = err instanceof Error ? err.message : 'Error fetching dashboard data';
+        setNotification({ type: 'error', message: msg });
       }
     } finally {
       setLoading(false);
@@ -43,7 +80,7 @@ export function Dashboard({ setNotification }) {
     return () => clearInterval(interval);
   }, []);
 
-  const handleRestartService = async (target, label) => {
+  const handleRestartService = async (target: string, label: string) => {
     try {
       setServiceActionLoading(true);
       const res = await apiFetch('/api/service/control', {
@@ -57,16 +94,15 @@ export function Dashboard({ setNotification }) {
         setNotification({ type: 'success', message: `${label} restarted successfully` });
       }
       await fetchDashboardData();
-    } catch (err) {
+    } catch (err: unknown) {
       if (setNotification) {
-        setNotification({ type: 'danger', message: err.message });
+        const msg = err instanceof Error ? err.message : 'Failed to restart service';
+        setNotification({ type: 'error', message: msg });
       }
     } finally {
       setServiceActionLoading(false);
     }
   };
-
-
 
   const counts = data?.counts || {};
   const dhcp4Service = data?.service?.dhcp4 || {};
@@ -287,7 +323,7 @@ export function Dashboard({ setNotification }) {
               </tr>
             </thead>
             <tbody>
-              {data?.recentLeases?.length > 0 ? (
+              {data?.recentLeases && data.recentLeases.length > 0 ? (
                 data.recentLeases.map((l) => (
                   <tr key={l.ip}>
                     <td className="font-mono font-bold text-cyan-600 dark:text-cyan-400">
@@ -311,7 +347,7 @@ export function Dashboard({ setNotification }) {
                 ))
               ) : (
                 <tr>
-                  <td colSpan="5" className="text-center py-8 text-slate-500 dark:text-slate-400">
+                  <td colSpan={5} className="text-center py-8 text-slate-500 dark:text-slate-400">
                     No lease records found
                   </td>
                 </tr>

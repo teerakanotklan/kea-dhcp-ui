@@ -10,7 +10,13 @@ import {
   X
 } from 'lucide-react';
 
-export function Sidebar({ isOpen, onClose, isCollapsed }) {
+export interface SidebarProps {
+  isOpen: boolean;
+  onClose: () => void;
+  isCollapsed: boolean;
+}
+
+export function Sidebar({ isOpen, onClose, isCollapsed }: SidebarProps) {
   const location = useLocation();
 
   const navItems = [
@@ -18,31 +24,31 @@ export function Sidebar({ isOpen, onClose, isCollapsed }) {
       to: '/',
       label: 'Dashboard',
       icon: LayoutDashboard,
-      isActive: (pathname) => pathname === '/' || pathname === '/dashboard'
+      isActive: (pathname: string) => pathname === '/' || pathname === '/dashboard'
     },
     {
       to: '/scopes',
       label: 'Scopes',
       icon: Network,
-      isActive: (pathname) => pathname.startsWith('/scopes') || pathname.startsWith('/subnets')
+      isActive: (pathname: string) => pathname.startsWith('/scopes') || pathname.startsWith('/subnets')
     },
     {
       to: '/leases',
       label: 'Leases',
       icon: Wifi,
-      isActive: (pathname) => pathname.startsWith('/leases')
+      isActive: (pathname: string) => pathname.startsWith('/leases')
     },
     {
       to: '/logs',
       label: 'Logs',
       icon: Terminal,
-      isActive: (pathname) => pathname.startsWith('/logs') || pathname.startsWith('/service')
+      isActive: (pathname: string) => pathname.startsWith('/logs') || pathname.startsWith('/service')
     },
     {
       to: '/settings',
       label: 'Settings',
       icon: Settings,
-      isActive: (pathname) => pathname.startsWith('/settings')
+      isActive: (pathname: string) => pathname.startsWith('/settings')
     },
   ];
 
@@ -134,6 +140,3 @@ export function Sidebar({ isOpen, onClose, isCollapsed }) {
     </>
   );
 }
-
-
-

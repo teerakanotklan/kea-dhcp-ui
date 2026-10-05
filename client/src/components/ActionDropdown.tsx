@@ -1,17 +1,31 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { MoreHorizontal } from 'lucide-react';
+import React, { useState, useRef, useEffect, ComponentType } from 'react';
+import { MoreHorizontal, LucideProps } from 'lucide-react';
 
-export function ActionDropdown({ items = [], align = 'right' }) {
+export interface ActionDropdownItem {
+  label?: string;
+  icon?: ComponentType<LucideProps>;
+  onClick?: () => void;
+  danger?: boolean;
+  disabled?: boolean;
+  separator?: boolean;
+}
+
+export interface ActionDropdownProps {
+  items?: (ActionDropdownItem | false | null | undefined)[];
+  align?: 'right' | 'left';
+}
+
+export function ActionDropdown({ items = [], align = 'right' }: ActionDropdownProps) {
   const [open, setOpen] = useState(false);
-  const dropdownRef = useRef(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setOpen(false);
       }
     };
-    const handleEscape = (e) => {
+    const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpen(false);
     };
 
@@ -25,7 +39,7 @@ export function ActionDropdown({ items = [], align = 'right' }) {
     };
   }, [open]);
 
-  const visibleItems = items.filter(Boolean);
+  const visibleItems = items.filter(Boolean) as ActionDropdownItem[];
 
   if (visibleItems.length === 0) return null;
 

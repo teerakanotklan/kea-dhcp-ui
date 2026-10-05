@@ -1,8 +1,16 @@
-import React, { useEffect, useId, useRef } from 'react';
+import React, { useEffect, useId, useRef, ComponentType } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, Trash2, CheckCircle2, X } from 'lucide-react';
+import { AlertTriangle, Trash2, CheckCircle2, X, LucideProps } from 'lucide-react';
 
-const VARIANTS = {
+export type ModalVariant = 'danger' | 'warning' | 'primary';
+
+interface VariantStyle {
+  icon: ComponentType<LucideProps>;
+  box: string;
+  btn: string;
+}
+
+const VARIANTS: Record<ModalVariant, VariantStyle> = {
   danger: {
     icon: Trash2,
     box: 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20',
@@ -20,6 +28,20 @@ const VARIANTS = {
   },
 };
 
+export interface ConfirmModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  title?: string;
+  message?: string;
+  confirmText?: string;
+  loadingText?: string;
+  loading?: boolean;
+  variant?: ModalVariant;
+  danger?: boolean;
+  icon?: ComponentType<LucideProps>;
+}
+
 export function ConfirmModal({
   isOpen,
   onClose,
@@ -32,20 +54,20 @@ export function ConfirmModal({
   variant,
   danger = true,
   icon,
-}) {
+}: ConfirmModalProps) {
   const titleId = useId();
   const descId = useId();
-  const cancelRef = useRef(null);
-  const confirmRef = useRef(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const confirmRef = useRef<HTMLButtonElement>(null);
 
   // `danger` prop kept for backward compatibility
-  const resolved = variant || (danger ? 'danger' : 'warning');
+  const resolved: ModalVariant = variant || (danger ? 'danger' : 'warning');
   const styles = VARIANTS[resolved] || VARIANTS.danger;
   const Icon = icon || styles.icon;
 
   useEffect(() => {
     if (!isOpen) return;
-    const handleKeyDown = (e) => {
+    const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !loading) onClose();
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -89,7 +111,7 @@ export function ConfirmModal({
 
           <button
             type="button"
-            className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 transition-colors"
+            className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:white hover:bg-slate-100 dark:hover:bg-white/10 transition-colors"
             onClick={onClose}
             disabled={loading}
             aria-label="Close dialog"

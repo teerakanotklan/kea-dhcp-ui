@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, FormEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { ConfirmModal } from '../../components/ConfirmModal';
@@ -9,9 +9,24 @@ import {
   Trash2,
   Globe,
   SlidersHorizontal,
-  BookmarkCheck,
-  Server
+  BookmarkCheck
 } from 'lucide-react';
+import { ScopeReservation, SubnetFormData } from '@shared';
+
+interface NotificationState {
+  type: 'success' | 'danger' | 'warning' | 'info';
+  message: string;
+}
+
+export interface ScopeFormProps {
+  setNotification: (notif: NotificationState) => void;
+}
+
+interface CustomOptionState {
+  type: string;
+  customName: string;
+  value: string;
+}
 
 const PREDEFINED_DHCP_OPTIONS = [
   { value: 'ntp-servers', label: 'ntp-servers (NTP Time Server)', example: 'time.google.com, 192.168.1.1' },
@@ -23,16 +38,16 @@ const PREDEFINED_DHCP_OPTIONS = [
   { value: 'custom', label: 'Custom Option (Specify Name)...', example: 'value or "string"' },
 ];
 
-export function ScopeForm({ setNotification }) {
-  const { id } = useParams();
+export function ScopeForm({ setNotification }: ScopeFormProps) {
+  const { id } = useParams<{ id?: string }>();
   const isEdit = Boolean(id);
   const navigate = useNavigate();
   const { apiFetch } = useAuth();
 
-  const [loading, setLoading] = useState(isEdit);
+  const [, setLoading] = useState(isEdit);
   const [saving, setSaving] = useState(false);
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<SubnetFormData>({
     name: '',
     subnet: '',
     netmask: '255.255.255.0',
@@ -45,16 +60,16 @@ export function ScopeForm({ setNotification }) {
     defaultLeaseTime: 4000,
   });
 
-  const [customOptions, setCustomOptions] = useState([]);
-  const [reservations, setReservations] = useState([]);
+  const [customOptions, setCustomOptions] = useState<CustomOptionState[]>([]);
+  const [reservations, setReservations] = useState<ScopeReservation[]>([]);
 
   // New reservation inline state
   const [newRes, setNewRes] = useState({ hostname: '', mac: '', ip: '' });
   const [resAdding, setResAdding] = useState(false);
-  const [deleteResTarget, setDeleteResTarget] = useState(null);
+  const [deleteResTarget, setDeleteResTarget] = useState<ScopeReservation | null>(null);
 
   const fetchScopeData = async () => {
-    if (!isEdit) return;
+    if (!isEdit || !id) return;
     try {
       setLoading(true);
       const res = await apiFetch(`/api/scopes/${id}`);
@@ -65,7 +80,7 @@ export function ScopeForm({ setNotification }) {
 
       setFormData({
         name: found.name || '',
-        subnet: found.subnet,
+        subnet: found.subnet || '',
         netmask: found.netmask || '255.255.255.0',
         disabled: Boolean(found.disabled),
         rangeStart: found.rangeStart || '',
@@ -79,7 +94,7 @@ export function ScopeForm({ setNotification }) {
       setReservations(found.reservations || []);
 
       if (Array.isArray(found.customOptions)) {
-        const mapped = found.customOptions.map((opt) => {
+        const mapped = found.customOptions.map((opt: { name: string; value?: string }) => {
           const isPredefined = PREDEFINED_DHCP_OPTIONS.some(
             (p) => p.value !== 'custom' && p.value === opt.name
           );
@@ -91,8 +106,9 @@ export function ScopeForm({ setNotification }) {
         });
         setCustomOptions(mapped);
       }
-    } catch (err) {
-      setNotification({ type: 'danger', message: err.message });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error fetching scope';
+      setNotification({ type: 'danger', message: msg });
       navigate('/scopes');
     } finally {
       setLoading(false);
@@ -103,18 +119,18 @@ export function ScopeForm({ setNotification }) {
     fetchScopeData();
   }, [id, isEdit]);
 
-  const addCustomOption = (preset = null) => {
+  const addCustomOption = (preset: string | null = null) => {
     setCustomOptions([
       ...customOptions,
       { type: preset || 'ntp-servers', customName: '', value: '' },
     ]);
   };
 
-  const removeCustomOption = (index) => {
+  const removeCustomOption = (index: number) => {
     setCustomOptions(customOptions.filter((_, i) => i !== index));
   };
 
-  const handleOptionTypeChange = (index, newType) => {
+  const handleOptionTypeChange = (index: number, newType: string) => {
     const updated = [...customOptions];
     updated[index].type = newType;
     if (newType !== 'custom') {
@@ -123,13 +139,13 @@ export function ScopeForm({ setNotification }) {
     setCustomOptions(updated);
   };
 
-  const handleOptionFieldChange = (index, field, val) => {
+  const handleOptionFieldChange = (index: number, field: 'customName' | 'value', val: string) => {
     const updated = [...customOptions];
     updated[index][field] = val;
     setCustomOptions(updated);
   };
 
-  const handleAddReservation = async (e) => {
+  const handleAddReservation = async (e: React.MouseEvent) => {
     e.preventDefault();
     if (!newRes.mac || !newRes.ip) {
       setNotification({ type: 'danger', message: 'MAC Address and IP Address are required' });
@@ -153,8 +169,9 @@ export function ScopeForm({ setNotification }) {
       setNotification({ type: 'success', message: `Reservation for ${newRes.ip} added successfully` });
       setNewRes({ hostname: '', mac: '', ip: '' });
       await fetchScopeData();
-    } catch (err) {
-      setNotification({ type: 'danger', message: err.message });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to add reservation';
+      setNotification({ type: 'danger', message: msg });
     } finally {
       setResAdding(false);
     }
@@ -172,12 +189,13 @@ export function ScopeForm({ setNotification }) {
       setNotification({ type: 'success', message: `Reservation ${deleteResTarget.mac} deleted` });
       setDeleteResTarget(null);
       await fetchScopeData();
-    } catch (err) {
-      setNotification({ type: 'danger', message: err.message });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to delete reservation';
+      setNotification({ type: 'danger', message: msg });
     }
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setSaving(true);
 
@@ -217,14 +235,13 @@ export function ScopeForm({ setNotification }) {
         setNotification({ type: 'success', message: `Scope ${formData.subnet} created successfully` });
       }
       navigate('/scopes');
-    } catch (err) {
-      setNotification({ type: 'danger', message: err.message });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to save scope';
+      setNotification({ type: 'danger', message: msg });
     } finally {
       setSaving(false);
     }
   };
-
-
 
   return (
     <div className="page-wrapper space-y-6">
@@ -279,7 +296,7 @@ export function ScopeForm({ setNotification }) {
                 Scope Status:
               </span>
               <div
-                onClick={() => setFormData((p) => ({ ...p, disabled: !p.disabled }))}
+                onClick={() => setFormData((p: SubnetFormData) => ({ ...p, disabled: !p.disabled }))}
                 className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                   !formData.disabled ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-white/20'
                 }`}
@@ -349,7 +366,7 @@ export function ScopeForm({ setNotification }) {
                 type="text"
                 className="input-text font-mono"
                 placeholder="192.168.1.100"
-                value={formData.rangeStart}
+                value={formData.rangeStart || ''}
                 onChange={(e) => setFormData({ ...formData, rangeStart: e.target.value })}
               />
               <span className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
@@ -363,7 +380,7 @@ export function ScopeForm({ setNotification }) {
                 type="text"
                 className="input-text font-mono"
                 placeholder="192.168.1.200"
-                value={formData.rangeEnd}
+                value={formData.rangeEnd || ''}
                 onChange={(e) => setFormData({ ...formData, rangeEnd: e.target.value })}
               />
               <span className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
@@ -389,7 +406,7 @@ export function ScopeForm({ setNotification }) {
                 type="text"
                 className="input-text font-mono"
                 placeholder="192.168.1.1"
-                value={formData.routers}
+                value={formData.routers || ''}
                 onChange={(e) => setFormData({ ...formData, routers: e.target.value })}
               />
             </div>
@@ -400,7 +417,7 @@ export function ScopeForm({ setNotification }) {
                 type="text"
                 className="input-text font-mono"
                 placeholder="8.8.8.8, 1.1.1.1"
-                value={formData.domainNameServers}
+                value={formData.domainNameServers || ''}
                 onChange={(e) => setFormData({ ...formData, domainNameServers: e.target.value })}
               />
             </div>
@@ -411,7 +428,7 @@ export function ScopeForm({ setNotification }) {
                 type="text"
                 className="input-text"
                 placeholder="corp.internal"
-                value={formData.domainName}
+                value={formData.domainName || ''}
                 onChange={(e) => setFormData({ ...formData, domainName: e.target.value })}
               />
             </div>
@@ -423,7 +440,7 @@ export function ScopeForm({ setNotification }) {
                 className="input-text"
                 placeholder="4000"
                 value={formData.defaultLeaseTime}
-                onChange={(e) => setFormData({ ...formData, defaultLeaseTime: e.target.value })}
+                onChange={(e) => setFormData({ ...formData, defaultLeaseTime: Number(e.target.value) })}
               />
             </div>
           </div>

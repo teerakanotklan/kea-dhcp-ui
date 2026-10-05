@@ -90,12 +90,16 @@ def sync_files(sftp, local_root, remote_root):
     # Files and folders to sync
     include_paths = [
         "package.json",
+        "package-lock.json",
         "client/package.json",
-        "client/vite.config.js",
+        "client/package-lock.json",
+        "client/vite.config.ts",
+        "client/tsconfig.json",
         "client/tailwind.config.js",
         "client/postcss.config.js",
         "client/index.html",
         "client/src",
+        "shared",
         "server"
     ]
     
@@ -165,7 +169,7 @@ def main():
 
     # 3. Build & Install Dependencies on Server
     print("[3/5] Updating server dependencies and building client...")
-    build_cmd = f"cd {REMOTE_DIR} && npm --prefix server install --omit=dev && npm --prefix client run build"
+    build_cmd = f"cd {REMOTE_DIR} && npm install --omit=dev && npm --prefix server install --omit=dev && npm --prefix client install && npm --prefix client run build"
     code, out, err = run_remote_command(ssh, build_cmd)
     if code != 0:
         print("  ✗ Client build failed:")

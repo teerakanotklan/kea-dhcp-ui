@@ -1,8 +1,20 @@
-import React from 'react';
-import { ArrowUp, ArrowDown, ChevronsUpDown } from 'lucide-react';
+import React, { ReactNode, ComponentType } from 'react';
+import { ArrowUp, ArrowDown, ChevronsUpDown, LucideProps } from 'lucide-react';
+import { SortState } from '../hooks/useSortableData';
+
+import { NotificationState } from '@shared';
+export type { NotificationState };
+
+export interface SortableThProps {
+  label: ReactNode;
+  sortKey: string;
+  sort: SortState | null;
+  onSort: (key: string) => void;
+  className?: string;
+}
 
 // Clickable, sortable <th>
-export function SortableTh({ label, sortKey, sort, onSort, className = '' }) {
+export function SortableTh({ label, sortKey, sort, onSort, className = '' }: SortableThProps) {
   const active = sort && sort.key === sortKey;
   const Icon = !active ? ChevronsUpDown : sort.dir === 'asc' ? ArrowUp : ArrowDown;
   return (
@@ -16,20 +28,31 @@ export function SortableTh({ label, sortKey, sort, onSort, className = '' }) {
 }
 
 // Skeleton rows shown while table data loads
-export function TableSkeleton({ rows = 8, cols = 6 }) {
-  return Array.from({ length: rows }).map((_, r) => (
-    <tr key={`sk-${r}`}>
-      {Array.from({ length: cols }).map((__, c) => (
-        <td key={c}>
-          <div className="skeleton-bar" style={{ width: `${55 + ((r * 7 + c * 13) % 40)}%` }} />
-        </td>
+export function TableSkeleton({ rows = 8, cols = 6 }: { rows?: number; cols?: number }) {
+  return (
+    <>
+      {Array.from({ length: rows }).map((_, r) => (
+        <tr key={`sk-${r}`}>
+          {Array.from({ length: cols }).map((__, c) => (
+            <td key={c}>
+              <div className="skeleton-bar" style={{ width: `${55 + ((r * 7 + c * 13) % 40)}%` }} />
+            </td>
+          ))}
+        </tr>
       ))}
-    </tr>
-  ));
+    </>
+  );
+}
+
+export interface EmptyStateProps {
+  icon?: ComponentType<LucideProps>;
+  title: string;
+  hint?: string;
+  actions?: ReactNode;
 }
 
 // Empty-state row content
-export function EmptyState({ icon: Icon, title, hint, actions }) {
+export function EmptyState({ icon: Icon, title, hint, actions }: EmptyStateProps) {
   return (
     <div className="flex flex-col items-center justify-center gap-2.5 py-16 h-full min-h-[250px] text-slate-500 dark:text-slate-400">
       {Icon && <Icon size={36} className="opacity-50" />}
@@ -40,8 +63,12 @@ export function EmptyState({ icon: Icon, title, hint, actions }) {
   );
 }
 
+export interface EmptyStateRowProps extends EmptyStateProps {
+  colSpan: number;
+}
+
 // Full-height empty-state row for tables
-export function EmptyStateRow({ colSpan, icon, title, hint, actions }) {
+export function EmptyStateRow({ colSpan, icon, title, hint, actions }: EmptyStateRowProps) {
   return (
     <tr className="empty-state-row h-full">
       <td colSpan={colSpan} className="h-full p-0 text-center">
@@ -51,8 +78,15 @@ export function EmptyStateRow({ colSpan, icon, title, hint, actions }) {
   );
 }
 
+export interface CopyTextProps {
+  value?: string | null;
+  setNotification?: (notif: NotificationState) => void;
+  className?: string;
+  children?: ReactNode;
+}
+
 // Click-to-copy text (IP / MAC) with toast
-export function CopyText({ value, setNotification, className = '', children }) {
+export function CopyText({ value, setNotification, className = '', children }: CopyTextProps) {
   if (!value) return <span className={className}>{children ?? 'N/A'}</span>;
   return (
     <button

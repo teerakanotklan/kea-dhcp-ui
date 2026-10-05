@@ -2,19 +2,15 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Pagination } from '../components/Pagination';
-import { SortableTh, EmptyState, EmptyStateRow, TableSkeleton } from '../components/TableParts';
+import { SortableTh, EmptyStateRow, TableSkeleton, NotificationState } from '../components/TableParts';
 import { usePersistedState } from '../hooks/usePersistedState';
-import { useSortableData } from '../hooks/useSortableData';
+import { useSortableData, ColumnsConfig } from '../hooks/useSortableData';
 import {
   Terminal,
-  RefreshCw,
   Search,
-  Clock,
-  Layers,
   Download,
   Copy,
   Check,
-  Filter,
   Eye,
   X,
   AlertCircle,
@@ -23,6 +19,15 @@ import {
   Bug,
   RotateCcw
 } from 'lucide-react';
+import { ServiceLogEntry } from '@shared';
+
+export interface ServiceLogsProps {
+  setNotification?: (notif: NotificationState) => void;
+}
+
+interface ExtendedLogEntry extends ServiceLogEntry {
+  event?: string;
+}
 
 const EVENT_CATEGORY_OPTIONS = [
   { value: 'all', label: 'All Event Categories' },
@@ -33,31 +38,30 @@ const EVENT_CATEGORY_OPTIONS = [
   { value: 'error', label: 'Errors & Warnings' },
 ];
 
-export function ServiceLogs({ setNotification }) {
+export function ServiceLogs({ setNotification }: ServiceLogsProps) {
   const navigate = useNavigate();
   const { apiFetch } = useAuth();
-  const [logs, setLogs] = useState([]);
+  const [logs, setLogs] = useState<ExtendedLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Filters
-  const [selectedService, setSelectedService] = usePersistedState('logs.service', 'all');
-  const [selectedLevel, setSelectedLevel] = usePersistedState('logs.level', 'all');
-  const [selectedCategory, setSelectedCategory] = usePersistedState('logs.category', 'all');
+  const [selectedService, setSelectedService] = usePersistedState<string>('logs.service', 'all');
+  const [selectedLevel, setSelectedLevel] = usePersistedState<string>('logs.level', 'all');
+  const [selectedCategory, setSelectedCategory] = usePersistedState<string>('logs.category', 'all');
   const [search, setSearch] = useState('');
-  const [limit, setLimit] = usePersistedState('logs.limit', 100);
-  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [limit, setLimit] = usePersistedState<number>('logs.limit', 100);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = usePersistedState('logs.pageSize', 25);
+  const [pageSize, setPageSize] = usePersistedState<number>('logs.pageSize', 25);
 
   // Interaction
-  const [copiedId, setCopiedId] = useState(null);
+  const [copiedId, setCopiedId] = useState<string | number | null>(null);
 
-  const handleViewDetail = (log) => {
+  const handleViewDetail = (log: ExtendedLogEntry) => {
     try {
       sessionStorage.setItem(`current_log_${log.id}`, JSON.stringify(log));
-    } catch (e) {
+    } catch {
       // Ignore
     }
     navigate(`/logs/${log.id}`, { state: { log } });
@@ -69,8 +73,11 @@ export function ServiceLogs({ setNotification }) {
       const res = await apiFetch(`/api/service/logs?limit=${limit}&service=${selectedService}`);
       const data = await res.json();
       setLogs(Array.isArray(data) ? data : []);
-    } catch (err) {
-      if (setNotification) setNotification({ type: 'danger', message: err.message });
+    } catch (err: unknown) {
+      if (setNotification) {
+        const msg = err instanceof Error ? err.message : 'Failed to fetch logs';
+        setNotification({ type: 'error', message: msg });
+      }
     } finally {
       setLoading(false);
     }
@@ -136,9 +143,9 @@ export function ServiceLogs({ setNotification }) {
     setCurrentPage(1);
   }, [selectedService, selectedLevel, selectedCategory, search, limit]);
 
-  const sortColumns = useMemo(() => ({
+  const sortColumns = useMemo<ColumnsConfig<ExtendedLogEntry>>(() => ({
     timestamp: { get: (l) => l.timestamp, type: 'string' },
-    service: { get: (l) => l.service, type: 'string' },
+    service: { get: (l) => l.service || '', type: 'string' },
     level: { get: (l) => l.level, type: 'string' }
   }), []);
   const { sorted: sortedLogs, sort, toggleSort } = useSortableData(filteredLogs, sortColumns);
@@ -150,7 +157,7 @@ export function ServiceLogs({ setNotification }) {
     return sortedLogs.slice(start, start + pageSize);
   }, [sortedLogs, currentPage, pageSize]);
 
-  const handleCopy = (log) => {
+  const handleCopy = (log: ExtendedLogEntry) => {
     const textToCopy = `[${log.timestamp}] [${log.service}] [${log.level}] ${log.event ? `[${log.event}] ` : ''}${log.message}`;
     navigator.clipboard.writeText(textToCopy);
     setCopiedId(log.id);
@@ -188,7 +195,7 @@ export function ServiceLogs({ setNotification }) {
     document.body.removeChild(link);
   };
 
-  const renderLevelBadge = (level) => {
+  const renderLevelBadge = (level?: string) => {
     const lvl = (level || 'INFO').toUpperCase();
     switch (lvl) {
       case 'ERROR':
@@ -222,7 +229,7 @@ export function ServiceLogs({ setNotification }) {
     }
   };
 
-  const renderServiceBadge = (svc) => {
+  const renderServiceBadge = (svc?: string) => {
     const name = (svc || '').toLowerCase();
     if (name.includes('dhcp4')) {
       return (
@@ -419,11 +426,11 @@ export function ServiceLogs({ setNotification }) {
                   title={isFiltering ? 'No logs match the current filter criteria' : 'No log entries available'}
                   hint={isFiltering ? 'Try changing the service, severity level, category, or search text.' : 'System logs generated by Kea daemons will appear here.'}
                   actions={
-                    isFiltering && (
+                    isFiltering ? (
                       <button type="button" className="btn btn-secondary text-xs" onClick={handleResetFilters}>
                         <RotateCcw size={13} /> Reset Filters
                       </button>
-                    )
+                    ) : undefined
                   }
                 />
               )}

@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, FormEvent } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Server, Lock, User, ArrowRight } from 'lucide-react';
+import { Server, Lock, User as UserIcon, ArrowRight } from 'lucide-react';
 
 export function Login() {
   const { user, login } = useAuth();
@@ -22,15 +22,16 @@ export function Login() {
     }
   }, [user, callbackUrl, navigate]);
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
     try {
       await login(username, password);
       navigate(callbackUrl, { replace: true });
-    } catch (err) {
-      setError(err.message || 'Login failed. Check your credentials.');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Login failed. Check your credentials.';
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -73,7 +74,7 @@ export function Login() {
                 onChange={(e) => setUsername(e.target.value)}
                 required
               />
-              <User
+              <UserIcon
                 size={18}
                 className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500"
               />

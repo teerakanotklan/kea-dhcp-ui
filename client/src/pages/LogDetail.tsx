@@ -6,33 +6,41 @@ import {
   Copy,
   Check,
   Clock,
-  Layers,
   AlertCircle,
   AlertTriangle,
   Info,
   Bug,
   FileText,
-  Hash,
-  Share2
+  Hash
 } from 'lucide-react';
+import { ServiceLogEntry } from '@shared';
+import { NotificationState } from '../components/TableParts';
 
-export function LogDetail({ setNotification }) {
-  const { id } = useParams();
+export interface LogDetailProps {
+  setNotification?: (notif: NotificationState) => void;
+}
+
+interface ExtendedLogEntry extends Partial<ServiceLogEntry> {
+  event?: string;
+}
+
+export function LogDetail({ setNotification }: LogDetailProps) {
+  const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
 
-  const [log, setLog] = useState(() => {
+  const [log] = useState<ExtendedLogEntry | null>(() => {
     // 1. Try React Router state
-    if (location.state && location.state.log) {
-      return location.state.log;
+    if (location.state && (location.state as { log?: ExtendedLogEntry }).log) {
+      return (location.state as { log: ExtendedLogEntry }).log;
     }
     // 2. Try sessionStorage fallback for direct refresh
     try {
       const cached = sessionStorage.getItem(`current_log_${id}`);
       if (cached) {
-        return JSON.parse(cached);
+        return JSON.parse(cached) as ExtendedLogEntry;
       }
-    } catch (e) {
+    } catch {
       // Ignore sessionStorage parsing error
     }
     return null;
@@ -45,13 +53,13 @@ export function LogDetail({ setNotification }) {
     if (log && id) {
       try {
         sessionStorage.setItem(`current_log_${id}`, JSON.stringify(log));
-      } catch (e) {
+      } catch {
         // Ignore
       }
     }
   }, [log, id]);
 
-  const copyToClipboard = (text, type) => {
+  const copyToClipboard = (text: string | undefined, type: 'raw' | 'msg') => {
     if (!text) return;
     navigator.clipboard.writeText(text);
     if (type === 'raw') {
@@ -69,7 +77,7 @@ export function LogDetail({ setNotification }) {
     }
   };
 
-  const renderServiceBadge = (service) => {
+  const renderServiceBadge = (service?: string) => {
     const s = (service || '').toLowerCase();
     if (s.includes('dhcp4')) {
       return (
@@ -99,7 +107,7 @@ export function LogDetail({ setNotification }) {
     );
   };
 
-  const renderLevelBadge = (level) => {
+  const renderLevelBadge = (level?: string) => {
     const lvl = (level || 'INFO').toUpperCase();
     switch (lvl) {
       case 'ERROR':
