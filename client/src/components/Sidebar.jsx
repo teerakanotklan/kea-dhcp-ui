@@ -59,7 +59,7 @@ export function Sidebar({ isOpen, onClose, isCollapsed }) {
 
       {/* Sidebar Drawer */}
       <aside
-        className={`fixed lg:sticky top-0 inset-y-0 left-0 z-50 bg-white dark:bg-slate-900 border-r border-slate-200/80 dark:border-white/10 flex flex-col h-screen shrink-0 select-none transition-transform duration-200 lg:transition-none ${
+        className={`fixed lg:sticky top-0 inset-y-0 left-0 z-50 bg-white dark:bg-slate-900 border-r border-slate-200/80 dark:border-white/10 flex flex-col h-screen shrink-0 select-none transition-[width,transform] duration-300 ease-in-out ${
           isCollapsed ? 'w-64 lg:w-20' : 'w-64 lg:w-64'
         } ${
           isOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full lg:translate-x-0'
@@ -107,7 +107,7 @@ export function Sidebar({ isOpen, onClose, isCollapsed }) {
                 to={item.to}
                 onClick={onClose}
                 title={isCollapsed ? item.label : undefined}
-                className={`h-11 rounded-xl text-sm font-medium flex items-center ${
+                className={`h-11 rounded-xl text-sm font-medium flex items-center transition-all duration-300 ${
                   isCollapsed
                     ? 'lg:w-11 lg:h-11 lg:justify-center lg:mx-auto w-full px-3.5 gap-3'
                     : 'w-full px-3.5 gap-3'
