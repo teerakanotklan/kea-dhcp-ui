@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { Plus, Edit2, Trash2, BookmarkCheck, Search, Copy, Check, Network, X } from 'lucide-react';
 import { ConfirmModal } from '../../components/ConfirmModal';
 import { Pagination } from '../../components/Pagination';
-import { SortableTh, EmptyState, CopyText } from '../../components/TableParts';
+import { SortableTh, EmptyState, EmptyStateRow, CopyText, TableSkeleton } from '../../components/TableParts';
 import { usePersistedState } from '../../hooks/usePersistedState';
 import { useSortableData } from '../../hooks/useSortableData';
 
@@ -173,7 +173,7 @@ export function StaticIP({ setNotification }) {
       {/* Table */}
       <div className="glass-card table-card shadow-sm">
         <div className="table-container">
-          <table className="data-table">
+          <table className={`data-table ${!loading && filteredHosts.length === 0 ? 'is-empty' : ''}`}>
             <thead>
               <tr>
                 <SortableTh label="Host Identifier" sortKey="name" {...sortProps} />
@@ -185,7 +185,10 @@ export function StaticIP({ setNotification }) {
               </tr>
             </thead>
             <tbody>
-              {paginatedHosts.map((h) => {
+              {loading && hosts.length === 0 ? (
+                <TableSkeleton rows={8} cols={6} />
+              ) : (
+                paginatedHosts.map((h) => {
                 const scope = findMatchingScope(h.ip, scopes);
                 return (
                   <tr key={h.name}>
@@ -249,29 +252,26 @@ export function StaticIP({ setNotification }) {
                     </td>
                   </tr>
                 );
-              })}
+              }))}
 
               {filteredHosts.length === 0 && !loading && (
-                <tr className="h-full">
-                  <td colSpan="6" className="h-full p-0">
-                    <EmptyState
-                      icon={BookmarkCheck}
-                      title={search ? `No static hosts matching "${search}"` : 'No static host reservations configured'}
-                      hint={search ? 'Try searching for a different hostname, MAC, or IP address.' : 'Add static host entries to bind IP addresses permanently to client MAC addresses.'}
-                      actions={
-                        search ? (
-                          <button className="btn btn-secondary text-xs" onClick={() => setSearch('')}>
-                            Clear filter
-                          </button>
-                        ) : (
-                          <Link to="/static-hosts/add" className="btn btn-primary text-xs">
-                            <Plus size={14} /> Add Static Host
-                          </Link>
-                        )
-                      }
-                    />
-                  </td>
-                </tr>
+                <EmptyStateRow
+                  colSpan={6}
+                  icon={BookmarkCheck}
+                  title={search ? `No static hosts matching "${search}"` : 'No static host reservations configured'}
+                  hint={search ? 'Try searching for a different hostname, MAC, or IP address.' : 'Add static host entries to bind IP addresses permanently to client MAC addresses.'}
+                  actions={
+                    search ? (
+                      <button className="btn btn-secondary text-xs" onClick={() => setSearch('')}>
+                        Clear filter
+                      </button>
+                    ) : (
+                      <Link to="/static-hosts/add" className="btn btn-primary text-xs">
+                        <Plus size={14} /> Add Static Host
+                      </Link>
+                    )
+                  }
+                />
               )}
             </tbody>
           </table>

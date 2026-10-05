@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { Pagination } from '../components/Pagination';
 import { ActionDropdown } from '../components/ActionDropdown';
-import { SortableTh, EmptyState, CopyText } from '../components/TableParts';
+import { SortableTh, EmptyState, EmptyStateRow, CopyText, TableSkeleton } from '../components/TableParts';
 import { usePersistedState } from '../hooks/usePersistedState';
 import { useSortableData } from '../hooks/useSortableData';
 import {
@@ -263,18 +263,55 @@ export function Leases({ setNotification }) {
 
   return (
     <div className="page-wrapper page-fill">
-      {/* Header + single-row toolbar */}
-      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">
+      {/* Header & Single-row Action Toolbar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white mb-0.5">
             DHCP IP Leases
           </h1>
-          <p className="text-slate-500 dark:text-slate-400 text-xs sm:text-sm truncate">
+          <p className="text-slate-500 dark:text-slate-400 text-xs sm:text-sm">
             Live records of active IP assignments and static host reservations
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <button className="btn btn-secondary text-xs sm:text-sm" onClick={fetchLeases} title="Refresh">
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            Refresh
+          </button>
+          <button className="btn btn-secondary text-xs sm:text-sm" onClick={exportCSV} disabled={leases.length === 0} title="Export CSV">
+            <Download size={14} />
+            CSV
+          </button>
+        </div>
+      </div>
+
+      {/* Search Bar, Filter Tabs & Counter */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-3 flex-1">
+          <form onSubmit={handleSearchSubmit} className="relative flex-1 max-w-xs sm:max-w-sm w-full">
+            <input
+              type="text"
+              className="input-text pl-9 pr-8 text-xs sm:text-sm py-2"
+              placeholder="Search IP, MAC, hostname..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            {search && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearch('');
+                  setTimeout(fetchLeases, 0);
+                }}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-white"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </form>
+
           <div className="segmented-tabs overflow-x-auto">
             {STATUS_TABS.map((tab) => (
               <button
@@ -286,43 +323,21 @@ export function Leases({ setNotification }) {
               </button>
             ))}
           </div>
-
-          <form onSubmit={handleSearchSubmit} className="relative w-64">
-            <input
-              type="text"
-              className="input-text pl-9 pr-8 py-2 text-xs sm:text-sm"
-              placeholder="Search IP, MAC, hostname..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            {search && (
-              <button
-                type="button"
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-white"
-                onClick={() => {
-                  setSearch('');
-                  setTimeout(fetchLeases, 0);
-                }}
-              >
-                <X size={14} />
-              </button>
-            )}
-          </form>
-
-          <button className="btn btn-secondary text-xs py-2" onClick={exportCSV} title="Export CSV">
-            <Download size={14} />
-            CSV
-          </button>
         </div>
+
+        <span className="text-xs text-slate-500 dark:text-slate-400 font-medium shrink-0">
+          Showing <strong className="text-slate-800 dark:text-slate-200 font-mono">{sortedLeases.length}</strong> of{' '}
+          <strong className="font-mono">{leases.length}</strong> leases
+        </span>
       </div>
 
       {/* Leases Table (fills remaining height) */}
-      <div className="glass-card table-card">
+      <div className="glass-card table-card shadow-sm">
         <div className="table-container">
-          <table className="data-table">
+          <table className={`data-table ${!loading && paginatedLeases.length === 0 ? 'is-empty' : ''}`}>
             <thead>
               <tr>
+                <th className="text-center w-14">No.</th>
                 <SortableTh label="Assigned IP" sortKey="ip" {...sortProps} />
                 <SortableTh label="Hardware MAC" sortKey="mac" {...sortProps} />
                 <SortableTh label="Client Hostname" sortKey="hostname" {...sortProps} />
@@ -333,106 +348,114 @@ export function Leases({ setNotification }) {
               </tr>
             </thead>
             <tbody>
-              {paginatedLeases.map((l) => (
-                <tr key={`${l.ip}-${l.mac}`}>
-                  <td>
-                    <div className="flex items-center gap-2.5">
-                      <Wifi size={15} className="text-cyan-500 shrink-0" />
-                      <CopyText
-                        value={l.ip}
-                        setNotification={setNotification}
-                        className="font-mono font-bold text-slate-900 dark:text-white text-xs sm:text-sm"
-                      />
-                    </div>
-                  </td>
+              {loading && leases.length === 0 ? (
+                <TableSkeleton rows={8} cols={8} />
+              ) : (
+                paginatedLeases.map((l, index) => {
+                  const absoluteIndex = (currentPage - 1) * pageSize + index + 1;
+                  return (
+                    <tr key={`${l.ip}-${l.mac}`}>
+                      <td className="text-center font-mono text-xs text-slate-400 dark:text-slate-500">
+                        {absoluteIndex}
+                      </td>
 
-                  <td>
-                    <CopyText
-                      value={l.mac}
-                      setNotification={setNotification}
-                      className="font-mono text-slate-600 dark:text-slate-400 text-xs sm:text-sm"
-                    >
-                      {l.mac || 'N/A'}
-                    </CopyText>
-                  </td>
+                      <td>
+                        <div className="flex items-center gap-2.5">
+                          <Wifi size={15} className="text-cyan-500 shrink-0" />
+                          <CopyText
+                            value={l.ip}
+                            setNotification={setNotification}
+                            className="font-mono font-bold text-slate-900 dark:text-white text-xs sm:text-sm"
+                          />
+                        </div>
+                      </td>
 
-                  <td className="font-medium text-slate-800 dark:text-slate-200">
-                    {l.hostname ? l.hostname : <span className="text-slate-400 italic font-normal">—</span>}
-                  </td>
+                      <td>
+                        <CopyText
+                          value={l.mac}
+                          setNotification={setNotification}
+                          className="font-mono text-slate-600 dark:text-slate-400 text-xs sm:text-sm"
+                        >
+                          {l.mac || 'N/A'}
+                        </CopyText>
+                      </td>
 
-                  <td>{renderStatusBadge(l)}</td>
+                      <td className="font-medium text-slate-800 dark:text-slate-200">
+                        {l.hostname ? l.hostname : <span className="text-slate-400 italic font-normal">—</span>}
+                      </td>
 
-                  <td className="text-xs text-slate-600 dark:text-slate-300 font-mono">
-                    {formatDateTime(l.starts)}
-                  </td>
+                      <td>{renderStatusBadge(l)}</td>
 
-                  <td className="text-xs font-mono">
-                    {l.isReserved || l.status === 'reserved' ? (
-                      <span className="text-indigo-600 dark:text-indigo-400 font-medium">Never (Reserved)</span>
-                    ) : (
-                      <span className="text-slate-600 dark:text-slate-300">{formatDateTime(l.ends)}</span>
-                    )}
-                  </td>
+                      <td className="text-xs text-slate-600 dark:text-slate-300 font-mono">
+                        {formatDateTime(l.starts)}
+                      </td>
 
-                  {/* Action Dropdown */}
-                  <td className="text-right">
-                    <ActionDropdown
-                      items={[
-                        !l.isReserved && {
-                          label: 'Convert to Reserve',
-                          icon: BookmarkPlus,
-                          onClick: () => openReserveModal(l)
-                        },
-                        !l.isReserved && l.status === 'active' && {
-                          label: 'Release Lease',
-                          icon: RotateCcw,
-                          danger: true,
-                          onClick: () => setReleaseTarget(l.ip)
-                        },
-                        { separator: true },
-                        {
-                          label: 'Copy IP Address',
-                          icon: Copy,
-                          onClick: () => {
-                            navigator.clipboard.writeText(l.ip);
-                            if (setNotification) setNotification({ type: 'success', message: `Copied ${l.ip}` });
-                          }
-                        },
-                        l.mac && {
-                          label: 'Copy MAC Address',
-                          icon: Copy,
-                          onClick: () => {
-                            navigator.clipboard.writeText(l.mac);
-                            if (setNotification) setNotification({ type: 'success', message: `Copied ${l.mac}` });
-                          }
-                        }
-                      ]}
-                    />
-                  </td>
-                </tr>
-              ))}
+                      <td className="text-xs font-mono">
+                        {l.isReserved || l.status === 'reserved' ? (
+                          <span className="text-indigo-600 dark:text-indigo-400 font-medium">Never (Reserved)</span>
+                        ) : (
+                          <span className="text-slate-600 dark:text-slate-300">{formatDateTime(l.ends)}</span>
+                        )}
+                      </td>
+
+                      {/* Action Dropdown */}
+                      <td className="text-right">
+                        <ActionDropdown
+                          items={[
+                            !l.isReserved && {
+                              label: 'Convert to Reserve',
+                              icon: BookmarkPlus,
+                              onClick: () => openReserveModal(l)
+                            },
+                            !l.isReserved && l.status === 'active' && {
+                              label: 'Release Lease',
+                              icon: RotateCcw,
+                              danger: true,
+                              onClick: () => setReleaseTarget(l.ip)
+                            },
+                            { separator: true },
+                            {
+                              label: 'Copy IP Address',
+                              icon: Copy,
+                              onClick: () => {
+                                navigator.clipboard.writeText(l.ip);
+                                if (setNotification) setNotification({ type: 'success', message: `Copied ${l.ip}` });
+                              }
+                            },
+                            l.mac && {
+                              label: 'Copy MAC Address',
+                              icon: Copy,
+                              onClick: () => {
+                                navigator.clipboard.writeText(l.mac);
+                                if (setNotification) setNotification({ type: 'success', message: `Copied ${l.mac}` });
+                              }
+                            }
+                          ]}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
 
               {leases.length === 0 && !loading && (
-                <tr className="h-full">
-                  <td colSpan="7" className="h-full p-0">
-                    <EmptyState
-                      icon={Wifi}
-                      title={isFiltering ? 'No leases match the current filters' : 'No lease records yet'}
-                      hint={isFiltering ? 'Try a different status or search keyword.' : 'Leases appear here as clients obtain IP addresses.'}
-                      actions={
-                        isFiltering ? (
-                          <button className="btn btn-secondary text-xs" onClick={clearFilters}>
-                            Clear filters
-                          </button>
-                        ) : (
-                          <button className="btn btn-secondary text-xs" onClick={fetchLeases}>
-                            <RefreshCw size={13} /> Refresh
-                          </button>
-                        )
-                      }
-                    />
-                  </td>
-                </tr>
+                <EmptyStateRow
+                  colSpan={8}
+                  icon={Wifi}
+                  title={isFiltering ? 'No leases match the current filters' : 'No lease records yet'}
+                  hint={isFiltering ? 'Try a different status or search keyword.' : 'Leases appear here as clients obtain IP addresses.'}
+                  actions={
+                    isFiltering ? (
+                      <button className="btn btn-secondary text-xs" onClick={clearFilters}>
+                        Clear filters
+                      </button>
+                    ) : (
+                      <button className="btn btn-secondary text-xs" onClick={fetchLeases}>
+                        <RefreshCw size={13} /> Refresh
+                      </button>
+                    )
+                  }
+                />
               )}
             </tbody>
           </table>

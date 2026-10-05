@@ -140,15 +140,27 @@ export function LogDetail({ setNotification }) {
   if (!log) {
     return (
       <div className="page-wrapper max-w-6xl mx-auto py-8 px-4 sm:px-8 space-y-6">
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            className="btn btn-secondary flex items-center gap-2 text-xs sm:text-sm py-2 px-3"
-            onClick={() => navigate('/logs')}
-          >
-            <ArrowLeft size={16} />
-            Back to Logs
-          </button>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white mb-0.5 flex items-center gap-2">
+              <Terminal size={22} className="text-indigo-500" />
+              Log Details
+            </h1>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Detailed inspection of Kea DHCP syslog journal entry
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2.5 self-start sm:self-auto">
+            <button
+              type="button"
+              className="btn btn-secondary text-xs sm:text-sm flex items-center gap-1.5"
+              onClick={() => navigate('/logs')}
+            >
+              <ArrowLeft size={15} />
+              Back to Logs
+            </button>
+          </div>
         </div>
 
         <div className="glass-card p-12 text-center space-y-4">
@@ -182,30 +194,28 @@ export function LogDetail({ setNotification }) {
     <div className="page-wrapper max-w-6xl mx-auto py-8 px-4 sm:px-8 space-y-6">
       {/* Top Header & Actions */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            className="btn btn-secondary flex items-center gap-2 text-xs sm:text-sm py-2 px-3"
-            onClick={() => navigate('/logs')}
-          >
-            <ArrowLeft size={16} />
-            Back to Logs
-          </button>
-          <div>
-            <h1 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <Terminal size={22} className="text-indigo-500" />
-              Log Entry #{log.id || id}
-            </h1>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Detailed inspection of Kea DHCP syslog journal entry
-            </p>
-          </div>
+        <div>
+          <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white mb-0.5 flex items-center gap-2">
+            <Terminal size={22} className="text-indigo-500" />
+            Log Entry #{log.id || id}
+          </h1>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Detailed inspection of Kea DHCP syslog journal entry
+          </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5 self-start sm:self-auto">
           <button
             type="button"
-            className="btn btn-secondary text-xs sm:text-sm flex items-center gap-2"
+            className="btn btn-secondary text-xs sm:text-sm flex items-center gap-1.5"
+            onClick={() => navigate('/logs')}
+          >
+            <ArrowLeft size={15} />
+            Back to Logs
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary text-xs sm:text-sm flex items-center gap-1.5"
             onClick={() => copyToClipboard(log.raw || log.message, 'raw')}
           >
             {copiedRaw ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}

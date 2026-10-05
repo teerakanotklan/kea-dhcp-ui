@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Pagination } from '../components/Pagination';
-import { SortableTh } from '../components/TableParts';
+import { SortableTh, EmptyState, EmptyStateRow, TableSkeleton } from '../components/TableParts';
 import { usePersistedState } from '../hooks/usePersistedState';
 import { useSortableData } from '../hooks/useSortableData';
 import {
@@ -139,8 +139,7 @@ export function ServiceLogs({ setNotification }) {
   const sortColumns = useMemo(() => ({
     timestamp: { get: (l) => l.timestamp, type: 'string' },
     service: { get: (l) => l.service, type: 'string' },
-    level: { get: (l) => l.level, type: 'string' },
-    event: { get: (l) => l.event, type: 'string' }
+    level: { get: (l) => l.level, type: 'string' }
   }), []);
   const { sorted: sortedLogs, sort, toggleSort } = useSortableData(filteredLogs, sortColumns);
   const sortProps = { sort, onSort: toggleSort };
@@ -328,112 +327,105 @@ export function ServiceLogs({ setNotification }) {
       {/* Structured Logs Table (fills remaining height) */}
       <div className="glass-card table-card shadow-sm">
         <div className="table-container">
-          <table className="data-table">
+          <table className={`data-table ${!loading && filteredLogs.length === 0 ? 'is-empty' : ''}`}>
             <thead>
               <tr>
                 <th className="text-center w-14">#</th>
                 <SortableTh label="Timestamp" sortKey="timestamp" className="w-40" {...sortProps} />
                 <SortableTh label="Service" sortKey="service" className="w-32" {...sortProps} />
                 <SortableTh label="Level" sortKey="level" className="w-24" {...sortProps} />
-                <SortableTh label="Event Tag" sortKey="event" className="w-44" {...sortProps} />
                 <th className="max-w-xs lg:max-w-sm xl:max-w-lg">Message</th>
                 <th className="text-right w-24">Action</th>
               </tr>
             </thead>
             <tbody>
-              {paginatedLogs.map((log, index) => {
-                const isError = (log.level || '').toUpperCase() === 'ERROR';
-                const isWarn = (log.level || '').toUpperCase() === 'WARN';
-                const absoluteIndex = (currentPage - 1) * pageSize + index + 1;
+              {loading && logs.length === 0 ? (
+                <TableSkeleton rows={8} cols={6} />
+              ) : (
+                paginatedLogs.map((log, index) => {
+                  const isError = (log.level || '').toUpperCase() === 'ERROR';
+                  const isWarn = (log.level || '').toUpperCase() === 'WARN';
+                  const absoluteIndex = (currentPage - 1) * pageSize + index + 1;
 
-                return (
-                  <tr
-                    key={log.id || index}
-                    className={`transition-colors cursor-pointer hover:bg-slate-50/80 dark:hover:bg-white/[0.03] ${
-                      isError
-                        ? 'bg-rose-500/[0.03] dark:bg-rose-500/[0.05]'
-                        : isWarn
-                        ? 'bg-amber-500/[0.03] dark:bg-amber-500/[0.04]'
-                        : ''
-                    }`}
-                    onClick={() => handleViewDetail(log)}
-                  >
-                    {/* Index */}
-                    <td className="text-center font-mono text-xs text-slate-400 select-none">
-                      {absoluteIndex}
-                    </td>
+                  return (
+                    <tr
+                      key={log.id || index}
+                      className={`transition-colors cursor-pointer hover:bg-slate-50/80 dark:hover:bg-white/[0.03] ${
+                        isError
+                          ? 'bg-rose-500/[0.03] dark:bg-rose-500/[0.05]'
+                          : isWarn
+                          ? 'bg-amber-500/[0.03] dark:bg-amber-500/[0.04]'
+                          : ''
+                      }`}
+                      onClick={() => handleViewDetail(log)}
+                    >
+                      {/* Index */}
+                      <td className="text-center font-mono text-xs text-slate-400 select-none">
+                        {absoluteIndex}
+                      </td>
 
-                    {/* Timestamp */}
-                    <td className="font-mono text-xs text-slate-600 dark:text-slate-400 whitespace-nowrap">
-                      {log.timestamp}
-                    </td>
+                      {/* Timestamp */}
+                      <td className="font-mono text-xs text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                        {log.timestamp}
+                      </td>
 
-                    {/* Service */}
-                    <td>
-                      {renderServiceBadge(log.service)}
-                    </td>
+                      {/* Service */}
+                      <td>
+                        {renderServiceBadge(log.service)}
+                      </td>
 
-                    {/* Level */}
-                    <td>
-                      {renderLevelBadge(log.level)}
-                    </td>
+                      {/* Level */}
+                      <td>
+                        {renderLevelBadge(log.level)}
+                      </td>
 
-                    {/* Event Tag */}
-                    <td>
-                      <span className="font-mono text-xs font-semibold text-slate-700 dark:text-slate-300 px-2 py-0.5 rounded bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10">
-                        {log.event || 'LOG'}
-                      </span>
-                    </td>
+                      {/* Truncated Message (Ellipsis, no horizontal scroll) */}
+                      <td className="font-mono text-xs leading-normal text-slate-700 dark:text-slate-300 truncate max-w-xs lg:max-w-sm xl:max-w-lg">
+                        <span className={isError ? 'text-rose-500 font-medium' : isWarn ? 'text-amber-500 font-medium' : ''}>
+                          {log.message}
+                        </span>
+                      </td>
 
-                    {/* Truncated Message (Ellipsis, no horizontal scroll) */}
-                    <td className="font-mono text-xs leading-normal text-slate-700 dark:text-slate-300 truncate max-w-xs lg:max-w-sm xl:max-w-lg">
-                      <span className={isError ? 'text-rose-500 font-medium' : isWarn ? 'text-amber-500 font-medium' : ''}>
-                        {log.message}
-                      </span>
-                    </td>
-
-                    {/* Actions */}
-                    <td className="text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                      <div className="inline-flex items-center gap-1">
-                        <button
-                          type="button"
-                          className="btn-icon"
-                          onClick={() => handleCopy(log)}
-                          title="Copy log entry"
-                        >
-                          {copiedId === log.id ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
-                        </button>
-                        <button
-                          type="button"
-                          className="btn-icon"
-                          onClick={() => handleViewDetail(log)}
-                          title="View Full Details (/logs/:id)"
-                        >
-                          <Eye size={14} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+                      {/* Actions */}
+                      <td className="text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                        <div className="inline-flex items-center gap-1">
+                          <button
+                            type="button"
+                            className="btn-icon"
+                            onClick={() => handleCopy(log)}
+                            title="Copy log entry"
+                          >
+                            {copiedId === log.id ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-icon"
+                            onClick={() => handleViewDetail(log)}
+                            title="View Full Details (/logs/:id)"
+                          >
+                            <Eye size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
 
               {filteredLogs.length === 0 && !loading && (
-                <tr className="h-full">
-                  <td colSpan={7} className="h-full p-0">
-                    <EmptyState
-                      icon={Terminal}
-                      title={isFiltering ? 'No logs match the current filter criteria' : 'No log entries available'}
-                      hint={isFiltering ? 'Try changing the service, severity level, category, or search text.' : 'System logs generated by Kea daemons will appear here.'}
-                      actions={
-                        isFiltering && (
-                          <button type="button" className="btn btn-secondary text-xs" onClick={handleResetFilters}>
-                            <RotateCcw size={13} /> Reset Filters
-                          </button>
-                        )
-                      }
-                    />
-                  </td>
-                </tr>
+                <EmptyStateRow
+                  colSpan={6}
+                  icon={Terminal}
+                  title={isFiltering ? 'No logs match the current filter criteria' : 'No log entries available'}
+                  hint={isFiltering ? 'Try changing the service, severity level, category, or search text.' : 'System logs generated by Kea daemons will appear here.'}
+                  actions={
+                    isFiltering && (
+                      <button type="button" className="btn btn-secondary text-xs" onClick={handleResetFilters}>
+                        <RotateCcw size={13} /> Reset Filters
+                      </button>
+                    )
+                  }
+                />
               )}
             </tbody>
           </table>

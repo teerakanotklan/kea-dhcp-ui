@@ -40,6 +40,17 @@ export function EmptyState({ icon: Icon, title, hint, actions }) {
   );
 }
 
+// Full-height empty-state row for tables
+export function EmptyStateRow({ colSpan, icon, title, hint, actions }) {
+  return (
+    <tr className="empty-state-row h-full">
+      <td colSpan={colSpan} className="h-full p-0 text-center">
+        <EmptyState icon={icon} title={title} hint={hint} actions={actions} />
+      </td>
+    </tr>
+  );
+}
+
 // Click-to-copy text (IP / MAC) with toast
 export function CopyText({ value, setNotification, className = '', children }) {
   if (!value) return <span className={className}>{children ?? 'N/A'}</span>;

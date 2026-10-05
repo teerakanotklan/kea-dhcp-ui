@@ -138,10 +138,17 @@
   }
 
   .data-table {
-    @apply w-full h-full border-collapse text-left text-sm;
+    @apply w-full border-collapse text-left text-sm;
   }
 
-  .data-table tbody {
+  /* When empty: stretch table & tbody so EmptyState centers vertically */
+  .data-table:has(.empty-state-row),
+  .data-table.is-empty {
+    @apply h-full;
+  }
+
+  .data-table:has(.empty-state-row) tbody,
+  .data-table.is-empty tbody {
     @apply h-full;
   }
 
@@ -172,6 +179,14 @@
 
   .data-table tbody tr {
     @apply hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors;
+  }
+
+  .data-table tbody tr.empty-state-row {
+    @apply hover:bg-transparent dark:hover:bg-transparent;
+  }
+
+  .data-table tbody tr.empty-state-row td {
+    @apply border-b-0;
   }
 
   /* Segmented Control Tabs */

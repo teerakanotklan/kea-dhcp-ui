@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { ConfirmModal } from '../../components/ConfirmModal';
 import { ActionDropdown } from '../../components/ActionDropdown';
 import { Pagination } from '../../components/Pagination';
-import { SortableTh, EmptyState } from '../../components/TableParts';
+import { SortableTh, EmptyState, EmptyStateRow, TableSkeleton } from '../../components/TableParts';
 import { usePersistedState } from '../../hooks/usePersistedState';
 import { useSortableData } from '../../hooks/useSortableData';
 import {
@@ -203,7 +203,7 @@ export function Scopes({ setNotification }) {
       {/* Scopes Table */}
       <div className="glass-card table-card shadow-sm">
         <div className="table-container">
-          <table className="data-table">
+          <table className={`data-table ${!loading && filteredScopes.length === 0 ? 'is-empty' : ''}`}>
             <thead>
               <tr>
                 <th className="text-center w-14">No.</th>
@@ -216,7 +216,10 @@ export function Scopes({ setNotification }) {
               </tr>
             </thead>
             <tbody>
-              {paginatedScopes.map((sub, index) => {
+              {loading && scopes.length === 0 ? (
+                <TableSkeleton rows={8} cols={7} />
+              ) : (
+                paginatedScopes.map((sub, index) => {
                 const isConfigured = Boolean(sub.rangeStart && sub.rangeEnd);
                 const isDisabled = Boolean(sub.disabled);
                 const resCount = sub.reservations?.length || 0;
@@ -298,29 +301,26 @@ export function Scopes({ setNotification }) {
                     </td>
                   </tr>
                 );
-              })}
+              }))}
 
               {filteredScopes.length === 0 && !loading && (
-                <tr className="h-full">
-                  <td colSpan={7} className="h-full p-0">
-                    <EmptyState
-                      icon={Network}
-                      title={search ? `No scopes matching "${search}"` : 'No scopes configured yet'}
-                      hint={search ? 'Try searching for a different scope name or subnet CIDR.' : 'Create network scopes to manage dynamic IP allocation pools.'}
-                      actions={
-                        search ? (
-                          <button className="btn btn-secondary text-xs" onClick={() => setSearch('')}>
-                            Clear filter
-                          </button>
-                        ) : (
-                          <Link to="/scopes/add" className="btn btn-primary text-xs">
-                            <Plus size={14} /> Add Scope
-                          </Link>
-                        )
-                      }
-                    />
-                  </td>
-                </tr>
+                <EmptyStateRow
+                  colSpan={7}
+                  icon={Network}
+                  title={search ? `No scopes matching "${search}"` : 'No scopes configured yet'}
+                  hint={search ? 'Try searching for a different scope name or subnet CIDR.' : 'Create network scopes to manage dynamic IP allocation pools.'}
+                  actions={
+                    search ? (
+                      <button className="btn btn-secondary text-xs" onClick={() => setSearch('')}>
+                        Clear filter
+                      </button>
+                    ) : (
+                      <Link to="/scopes/add" className="btn btn-primary text-xs">
+                        <Plus size={14} /> Add Scope
+                      </Link>
+                    )
+                  }
+                />
               )}
             </tbody>
           </table>
