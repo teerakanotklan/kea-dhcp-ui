@@ -59,29 +59,31 @@ export function Sidebar({ isOpen, onClose, isCollapsed }) {
 
       {/* Sidebar Drawer */}
       <aside
-        className={`fixed lg:sticky top-0 inset-y-0 left-0 z-50 bg-white dark:bg-slate-900 border-r border-slate-200/80 dark:border-white/10 flex flex-col h-screen transition-all duration-300 ease-in-out shrink-0 select-none ${
+        className={`fixed lg:sticky top-0 inset-y-0 left-0 z-50 bg-white dark:bg-slate-900 border-r border-slate-200/80 dark:border-white/10 flex flex-col h-screen shrink-0 select-none transition-transform duration-200 lg:transition-none ${
           isCollapsed ? 'w-64 lg:w-20' : 'w-64 lg:w-64'
         } ${
           isOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full lg:translate-x-0'
         }`}
       >
         {/* Header */}
-        <div className="h-16 px-4 flex items-center justify-between border-b border-slate-200/80 dark:border-white/10 shrink-0">
-          <div className={`flex items-center gap-3 overflow-hidden ${isCollapsed ? 'lg:justify-center lg:w-full' : ''}`}>
+        <div className={`h-16 px-4 flex items-center ${isCollapsed ? 'lg:justify-center' : 'justify-between'} border-b border-slate-200/80 dark:border-white/10 shrink-0`}>
+          <div className="flex items-center gap-3 overflow-hidden">
             <div
               className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-cyan-500 flex items-center justify-center text-white shadow-glow-indigo shrink-0"
               title="Kea DHCP Control Panel"
             >
               <Activity size={22} />
             </div>
-            <div className={`transition-all duration-300 overflow-hidden ${isCollapsed ? 'lg:hidden' : 'block'}`}>
-              <h1 className="font-bold text-base tracking-tight text-slate-900 dark:text-white whitespace-nowrap leading-tight">
-                Kea DHCP UI
-              </h1>
-              <span className="text-[11px] font-semibold text-cyan-600 dark:text-cyan-400 uppercase tracking-wider block">
-                Control Panel
-              </span>
-            </div>
+            {!isCollapsed && (
+              <div>
+                <h1 className="font-bold text-base tracking-tight text-slate-900 dark:text-white whitespace-nowrap leading-tight">
+                  Kea DHCP UI
+                </h1>
+                <span className="text-[11px] font-semibold text-cyan-600 dark:text-cyan-400 uppercase tracking-wider block">
+                  Control Panel
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Close button for mobile drawer */}
@@ -105,7 +107,7 @@ export function Sidebar({ isOpen, onClose, isCollapsed }) {
                 to={item.to}
                 onClick={onClose}
                 title={isCollapsed ? item.label : undefined}
-                className={`h-11 rounded-xl text-sm font-medium transition-all duration-150 flex items-center ${
+                className={`h-11 rounded-xl text-sm font-medium flex items-center ${
                   isCollapsed
                     ? 'lg:w-11 lg:h-11 lg:justify-center lg:mx-auto w-full px-3.5 gap-3'
                     : 'w-full px-3.5 gap-3'
@@ -123,13 +125,11 @@ export function Sidebar({ isOpen, onClose, isCollapsed }) {
                       : 'text-slate-400 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-300'
                   }`}
                 />
-                <span
-                  className={`whitespace-nowrap transition-opacity duration-200 ${
-                    isCollapsed ? 'lg:hidden' : 'inline-block'
-                  }`}
-                >
-                  {item.label}
-                </span>
+                {!isCollapsed && (
+                  <span className="whitespace-nowrap">
+                    {item.label}
+                  </span>
+                )}
               </NavLink>
             );
           })}
@@ -138,5 +138,6 @@ export function Sidebar({ isOpen, onClose, isCollapsed }) {
     </>
   );
 }
+
 
 

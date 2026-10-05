@@ -16,7 +16,7 @@ npm run deploy:remote
 ```
 
 ### สิ่งที่สคริปต์ทำโดยอัตโนมัติ:
-1. เชื่อมต่อไปยัง `192.168.153.8` (User: `localadm` / `P@ssw0rd`)
+1. เชื่อมต่อไปยังเซิร์ฟเวอร์ปลายทางผ่าน SSH (ดึงข้อมูล Host, User, Password จากไฟล์ `.env` ที่กำหนดค่าตาม `.env.example`)
 2. ซิงค์ไฟล์ซอร์สโค้ดที่มีการแก้ไขไปยัง `/opt/kea-dhcp-ui`
 3. สั่ง Build Client (`npm --prefix client run build`) บนเซิร์ฟเวอร์
 4. รีสตาร์ท Service (`systemctl restart kea-dhcp-ui.service`)

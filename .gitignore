@@ -34,10 +34,8 @@ client/dist
 
 # Environment variables
 .env
-.env.production
-.env.development
-.env.local
-.env.*.local
+.env.*
+!.env.example
 
 # Server runtime data (seeded from server/mock on first run)
 server/data/*

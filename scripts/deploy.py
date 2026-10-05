@@ -10,11 +10,28 @@ import time
 import posixpath
 import paramiko
 
+# Load environment variables from .env if present
+env_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".env"))
+try:
+    from dotenv import load_dotenv
+    load_dotenv(env_path)
+except ImportError:
+    if os.path.exists(env_path):
+        with open(env_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, v = line.split("=", 1)
+                    k, v = k.strip(), v.strip()
+                    if (v.startswith('"') and v.endswith('"')) or (v.startswith("'") and v.endswith("'")):
+                        v = v[1:-1]
+                    os.environ.setdefault(k, v)
+
 # Target Configuration
 REMOTE_HOST = os.environ.get("REMOTE_HOST", "192.168.153.8")
 REMOTE_PORT = int(os.environ.get("REMOTE_PORT", 22))
 REMOTE_USER = os.environ.get("REMOTE_USER", "localadm")
-REMOTE_PASS = os.environ.get("REMOTE_PASS", "P@ssw0rd")
+REMOTE_PASS = os.environ.get("REMOTE_PASS")
 REMOTE_DIR = os.environ.get("REMOTE_DIR", "/opt/kea-dhcp-ui")
 
 # Ensure UTF-8 output on Windows
@@ -122,6 +139,12 @@ def run_remote_command(ssh, cmd, sudo=False):
     return exit_code, out, err
 
 def main():
+    if not REMOTE_PASS:
+        print("[ERROR] REMOTE_PASS is not set in environment or .env file.")
+        print("Please copy .env.example to .env and configure REMOTE_PASS:")
+        print("  cp .env.example .env")
+        sys.exit(1)
+
     workspace_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     print(f"=== Deploying Kea DHCP UI to {REMOTE_USER}@{REMOTE_HOST}:{REMOTE_DIR} ===")
     
@@ -140,9 +163,9 @@ def main():
     sftp.close()
     print(f"  ✓ Synchronized {transferred} files")
 
-    # 3. Build Client on Server
-    print("[3/5] Building client on remote server (vite build)...")
-    build_cmd = f"cd {REMOTE_DIR} && npm --prefix client run build"
+    # 3. Build & Install Dependencies on Server
+    print("[3/5] Updating server dependencies and building client...")
+    build_cmd = f"cd {REMOTE_DIR} && npm --prefix server install --omit=dev && npm --prefix client run build"
     code, out, err = run_remote_command(ssh, build_cmd)
     if code != 0:
         print("  ✗ Client build failed:")
