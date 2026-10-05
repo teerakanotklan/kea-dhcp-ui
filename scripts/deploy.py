@@ -156,9 +156,10 @@ def main():
     print("[1/5] Connecting via SSH...")
     ssh = get_ssh_client()
     setup_ssh_keys_if_needed(ssh)
-    # Ensure remote directory permissions
+    # Ensure remote directory permissions and clean legacy uncompiled JS directories
     run_remote_command(ssh, f"chmod -R 777 {REMOTE_DIR}", sudo=True)
-    print("  ✓ Connected successfully and verified permissions")
+    run_remote_command(ssh, f"rm -rf {REMOTE_DIR}/server/config {REMOTE_DIR}/server/middleware {REMOTE_DIR}/server/routes {REMOTE_DIR}/server/services {REMOTE_DIR}/server/scripts")
+    print("  ✓ Connected successfully and cleaned legacy directories")
 
     # 2. Sync Files
     print("[2/5] Uploading modified project files...")

@@ -1,15 +1,15 @@
 {
-  "name": "isc-dhcp-ui",
+  "name": "kea-dhcp-ui",
   "version": "1.0.0",
-  "description": "Modern Web UI for ISC DHCP Server Management",
+  "description": "Modern Web UI for Kea DHCP Server Management",
   "private": true,
   "scripts": {
     "start": "node server/index.js",
     "dev:server": "node --watch server/index.js",
     "dev:client": "npm --prefix client run dev",
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
-    "build": "npm --prefix client run build",
-    "verify": "node server/scripts/test-verify.js",
+    "build": "npm --prefix server run build && npm --prefix client run build",
+    "typecheck": "npm --prefix server run build && npm --prefix client run build",
     "deploy:remote": "python scripts/deploy.py",
     "install:all": "npm install && npm --prefix server install && npm --prefix client install"
   },
@@ -17,6 +17,6 @@
     "concurrently": "^8.2.2"
   },
   "dependencies": {
-    "zod": "^4.6.5"
+    "zod": "^3.24.2"
   }
 }

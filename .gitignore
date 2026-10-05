@@ -19,6 +19,7 @@ server/node_modules/
 dist
 dist-ssr
 client/dist
+server/dist
 *.local
 *.tsbuildinfo
 
