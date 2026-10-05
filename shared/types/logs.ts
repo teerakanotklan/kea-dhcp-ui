@@ -18,6 +18,7 @@ export const ServiceLogEntrySchema = z.object({
   service: z.string().optional(),
   level: z.string(),
   category: z.string().optional(),
+  event: z.string().optional(),
   message: z.string(),
   raw: z.string().optional(),
   pid: z.union([z.number(), z.string()]).optional(),

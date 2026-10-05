@@ -1,21 +1,31 @@
-const fs = require('fs');
-const path = require('path');
-const crypto = require('crypto');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const config = require('../config/default');
+import fs from 'fs';
+import path from 'path';
+import crypto from 'crypto';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import config from '../config/default';
+import { User } from '../../../shared/types/auth';
 
-const usersFile = path.join(__dirname, '..', 'data', 'users.json');
+import { DATA_DIR } from '../config/paths';
 
-class AuthService {
+export interface StoredUser {
+  id: string;
+  username: string;
+  name: string;
+  passwordHash: string;
+  role: 'admin' | 'operator' | 'viewer';
+  createdAt: string;
+}
+
+const usersFile = path.join(DATA_DIR, 'users.json');
+
+export class AuthService {
   constructor() {
     this.initUsers();
   }
 
-  initUsers() {
+  initUsers(): void {
     if (!fs.existsSync(usersFile)) {
-      // Initial admin password: ADMIN_PASSWORD env, else random in production,
-      // else 'admin123' for local development/tests only.
       let initialPassword = process.env.ADMIN_PASSWORD;
       if (!initialPassword) {
         if (process.env.NODE_ENV === 'production') {
@@ -26,7 +36,7 @@ class AuthService {
         }
       }
       const salt = bcrypt.genSaltSync(10);
-      const defaultUsers = [
+      const defaultUsers: StoredUser[] = [
         {
           id: 'user_admin',
           username: 'admin',
@@ -40,22 +50,22 @@ class AuthService {
     }
   }
 
-  getUsers() {
+  getUsers(): StoredUser[] {
     if (!fs.existsSync(usersFile)) this.initUsers();
     try {
       const data = fs.readFileSync(usersFile, 'utf8');
-      return JSON.parse(data);
+      return JSON.parse(data) as StoredUser[];
     } catch (e) {
       this.initUsers();
-      return JSON.parse(fs.readFileSync(usersFile, 'utf8'));
+      return JSON.parse(fs.readFileSync(usersFile, 'utf8')) as StoredUser[];
     }
   }
 
-  saveUsers(users) {
+  saveUsers(users: StoredUser[]): void {
     fs.writeFileSync(usersFile, JSON.stringify(users, null, 2), 'utf8');
   }
 
-  authenticate(username, password) {
+  authenticate(username: string, password: string): { success: boolean; token?: string; user?: User; error?: string } {
     const users = this.getUsers();
     const user = users.find(u => u.username.toLowerCase() === username.toLowerCase());
 
@@ -81,7 +91,7 @@ class AuthService {
         role: user.role
       },
       config.jwtSecret,
-      { expiresIn: config.jwtExpiresIn }
+      { expiresIn: config.jwtExpiresIn as any }
     );
 
     return {
@@ -96,13 +106,13 @@ class AuthService {
     };
   }
 
-  changePassword(userId, currentPassword, newPassword) {
+  changePassword(userId: string | number, currentPassword: string, newPassword: string): { success: boolean; message: string } {
     if (!newPassword || newPassword.length < 6) {
       throw new Error('New password must be at least 6 characters');
     }
 
     const users = this.getUsers();
-    const user = users.find(u => u.id === userId);
+    const user = users.find(u => String(u.id) === String(userId));
     if (!user) {
       throw new Error('User not found');
     }
@@ -120,4 +130,4 @@ class AuthService {
   }
 }
 
-module.exports = new AuthService();
+export default new AuthService();

@@ -1,9 +1,10 @@
-const fs = require('fs');
-const path = require('path');
-const config = require('../config/default');
-const keaService = require('./keaService');
+import fs from 'fs';
+import config from '../config/default';
+import keaService from './keaService';
+import { Subnet, ScopeReservation, DhcpCustomOption } from '../../../shared/types/subnet';
+import { KeaDhcp4Config, KeaSubnet4, KeaOptionData, KeaReservation } from '../types/kea';
 
-function maskToCidr(mask) {
+export function maskToCidr(mask?: string | number): number {
   if (!mask) return 24;
   if (typeof mask === 'number') return mask;
   if (/^\d+$/.test(mask)) return parseInt(mask, 10);
@@ -16,9 +17,9 @@ function maskToCidr(mask) {
   return count;
 }
 
-function cidrToMask(cidr) {
-  const c = parseInt(cidr, 10) || 24;
-  const mask = [];
+export function cidrToMask(cidr?: string | number): string {
+  const c = parseInt(String(cidr || 24), 10) || 24;
+  const mask: number[] = [];
   for (let i = 0; i < 4; i++) {
     const bits = Math.min(Math.max(c - i * 8, 0), 8);
     mask.push(256 - Math.pow(2, 8 - bits));
@@ -26,7 +27,12 @@ function cidrToMask(cidr) {
   return mask.join('.');
 }
 
-function parseSubnetCidr(subnetStr, netmaskStr) {
+export function parseSubnetCidr(subnetStr?: string, netmaskStr?: string): {
+  subnet: string;
+  baseIp: string;
+  netmask: string;
+  cidr: number;
+} {
   if (!subnetStr) return { subnet: '0.0.0.0/24', baseIp: '0.0.0.0', netmask: '255.255.255.0', cidr: 24 };
 
   if (subnetStr.includes('/')) {
@@ -49,12 +55,49 @@ function parseSubnetCidr(subnetStr, netmaskStr) {
   };
 }
 
-class DhcpConfigService {
+export interface ParsedConfig {
+  global: {
+    defaultLeaseTime: number;
+    renewTimer: number;
+    rebindTimer: number;
+    authoritative: boolean;
+  };
+  subnets: Subnet[];
+  hosts: ScopeReservation[];
+  raw: string;
+}
+
+export interface GlobalSettings {
+  defaultLeaseTime: number;
+  renewTimer: number;
+  rebindTimer: number;
+  domainNameServers: string;
+  domainName: string;
+  authoritative: boolean;
+}
+
+export interface SubnetInputData {
+  name?: string;
+  subnet: string;
+  netmask?: string;
+  rangeStart?: string;
+  rangeEnd?: string;
+  routers?: string;
+  domainNameServers?: string;
+  domainName?: string;
+  defaultLeaseTime?: number | string;
+  disabled?: boolean;
+  customOptions?: DhcpCustomOption[];
+}
+
+export class DhcpConfigService {
+  private confPath: string;
+
   constructor() {
     this.confPath = config.confPath;
   }
 
-  async getRawConfig() {
+  async getRawConfig(): Promise<string> {
     try {
       const keaConfig = await keaService.getConfig();
       return JSON.stringify({ Dhcp4: keaConfig }, null, 2);
@@ -66,19 +109,20 @@ class DhcpConfigService {
     }
   }
 
-  async saveRawConfig(content, comment = 'Manual edit via Web UI') {
-    let parsed;
+  async saveRawConfig(content: string, comment = 'Manual edit via Web UI'): Promise<{ success: boolean; appliedViaAgent: boolean; message: string }> {
+    let parsed: Record<string, unknown>;
     try {
       parsed = JSON.parse(content);
-    } catch (e) {
-      throw new Error(`JSON Syntax Error: ${e.message}`);
+    } catch (e: unknown) {
+      const errMsg = e instanceof Error ? e.message : String(e);
+      throw new Error(`JSON Syntax Error: ${errMsg}`);
     }
 
-    const dhcp4Config = parsed.Dhcp4 || parsed;
+    const dhcp4Config = (parsed.Dhcp4 || parsed) as KeaDhcp4Config;
     return await keaService.setConfig(dhcp4Config, comment);
   }
 
-  validateSyntax(content) {
+  validateSyntax(content: string): { valid: boolean; error?: string } {
     try {
       const parsed = JSON.parse(content);
       const dhcp4 = parsed.Dhcp4 || parsed;
@@ -86,16 +130,17 @@ class DhcpConfigService {
         return { valid: false, error: 'Configuration must contain a valid Dhcp4 JSON object' };
       }
       return { valid: true };
-    } catch (e) {
-      return { valid: false, error: `Invalid JSON format: ${e.message}` };
+    } catch (e: unknown) {
+      const errMsg = e instanceof Error ? e.message : String(e);
+      return { valid: false, error: `Invalid JSON format: ${errMsg}` };
     }
   }
 
-  async parseConfig() {
+  async parseConfig(): Promise<ParsedConfig> {
     const dhcp4 = await keaService.getConfig();
     const raw = JSON.stringify({ Dhcp4: dhcp4 }, null, 2);
 
-    const subnets = (dhcp4.subnet4 || []).map((s) => {
+    const subnets: Subnet[] = (dhcp4.subnet4 || []).map((s: KeaSubnet4) => {
       const { baseIp, netmask, cidr } = parseSubnetCidr(s.subnet);
       let rangeStart = '';
       let rangeEnd = '';
@@ -110,7 +155,7 @@ class DhcpConfigService {
       const dnsOpt = (s['option-data'] || []).find((o) => o.name === 'domain-name-servers');
       const domainOpt = (s['option-data'] || []).find((o) => o.name === 'domain-name');
 
-      const reservations = (s.reservations || []).map((r, idx) => ({
+      const reservations: ScopeReservation[] = (s.reservations || []).map((r: KeaReservation, idx: number) => ({
         id: `${s.id || s.subnet}-${r['hw-address'] || idx}`,
         subnetId: s.id,
         name: r.hostname || `Host-${idx + 1}`,
@@ -138,7 +183,7 @@ class DhcpConfigService {
       };
     });
 
-    const allHosts = subnets.flatMap((s) => s.reservations);
+    const allHosts = subnets.flatMap((s) => s.reservations || []);
 
     return {
       global: {
@@ -153,27 +198,27 @@ class DhcpConfigService {
     };
   }
 
-  async getSubnets() {
+  async getSubnets(): Promise<Subnet[]> {
     const configData = await this.parseConfig();
     return configData.subnets;
   }
 
-  async getSubnetById(id) {
+  async getSubnetById(id: string | number): Promise<Subnet | undefined> {
     const subnets = await this.getSubnets();
     const strId = String(id);
     return subnets.find((s) => String(s.id) === strId || s.subnet === strId || s.subnetCidr === strId);
   }
 
-  async createSubnet(data) {
+  async createSubnet(data: SubnetInputData): Promise<Subnet | undefined> {
     const dhcp4 = await keaService.getConfig();
     if (!dhcp4.subnet4) {
       dhcp4.subnet4 = [];
     }
 
-    const maxId = dhcp4.subnet4.reduce((max, s) => Math.max(max, parseInt(s.id, 10) || 0), 0);
+    const maxId = dhcp4.subnet4.reduce((max, s) => Math.max(max, parseInt(String(s.id), 10) || 0), 0);
     const newId = maxId + 1;
 
-    const { subnet: cidrString, baseIp } = parseSubnetCidr(data.subnet, data.netmask);
+    const { subnet: cidrString } = parseSubnetCidr(data.subnet, data.netmask);
 
     // Build pools
     const pools = [];
@@ -182,7 +227,7 @@ class DhcpConfigService {
     }
 
     // Build option-data
-    const optionData = [];
+    const optionData: KeaOptionData[] = [];
     if (data.routers) {
       optionData.push({ name: 'routers', data: data.routers });
     }
@@ -196,13 +241,14 @@ class DhcpConfigService {
     // Custom options
     if (Array.isArray(data.customOptions)) {
       data.customOptions.forEach((opt) => {
-        if (opt.name && opt.data) {
-          optionData.push({ name: opt.name, data: opt.data });
+        const optVal = opt.data || opt.value;
+        if (opt.name && optVal) {
+          optionData.push({ name: opt.name, data: optVal });
         }
       });
     }
 
-    const newSubnet = {
+    const newSubnet: KeaSubnet4 = {
       id: newId,
       subnet: cidrString,
       comment: data.name || `Scope ${cidrString}`,
@@ -212,7 +258,7 @@ class DhcpConfigService {
     };
 
     if (data.defaultLeaseTime) {
-      newSubnet['valid-lifetime'] = parseInt(data.defaultLeaseTime, 10);
+      newSubnet['valid-lifetime'] = parseInt(String(data.defaultLeaseTime), 10);
     }
     if (data.disabled) {
       newSubnet['user-context'] = { disabled: true };
@@ -224,7 +270,7 @@ class DhcpConfigService {
     return await this.getSubnetById(newId);
   }
 
-  async updateSubnet(id, data) {
+  async updateSubnet(id: string | number, data: Partial<SubnetInputData>): Promise<Subnet | undefined> {
     const dhcp4 = await keaService.getConfig();
     if (!dhcp4.subnet4) {
       throw new Error('No subnets configured');
@@ -253,7 +299,7 @@ class DhcpConfigService {
     }
 
     // Update option-data
-    const optionData = [];
+    const optionData: KeaOptionData[] = [];
     const routers = data.routers !== undefined ? data.routers : (current['option-data'] || []).find((o) => o.name === 'routers')?.data;
     const dns = data.domainNameServers !== undefined ? data.domainNameServers : (current['option-data'] || []).find((o) => o.name === 'domain-name-servers')?.data;
     const domain = data.domainName !== undefined ? data.domainName : (current['option-data'] || []).find((o) => o.name === 'domain-name')?.data;
@@ -264,14 +310,15 @@ class DhcpConfigService {
 
     if (Array.isArray(data.customOptions)) {
       data.customOptions.forEach((opt) => {
-        if (opt.name && opt.data) optionData.push({ name: opt.name, data: opt.data });
+        const optVal = opt.data || opt.value;
+        if (opt.name && optVal) optionData.push({ name: opt.name, data: optVal });
       });
     }
 
     current['option-data'] = optionData;
 
     if (data.defaultLeaseTime) {
-      current['valid-lifetime'] = parseInt(data.defaultLeaseTime, 10);
+      current['valid-lifetime'] = parseInt(String(data.defaultLeaseTime), 10);
     }
     if (data.disabled !== undefined) {
       if (data.disabled) {
@@ -289,7 +336,7 @@ class DhcpConfigService {
     return await this.getSubnetById(current.id);
   }
 
-  async deleteSubnet(id) {
+  async deleteSubnet(id: string | number): Promise<{ success: boolean; message: string }> {
     const dhcp4 = await keaService.getConfig();
     if (!dhcp4.subnet4) {
       throw new Error('No subnets configured');
@@ -307,7 +354,7 @@ class DhcpConfigService {
     return { success: true, message: `Scope ${id} deleted successfully` };
   }
 
-  async toggleSubnetDisabled(id) {
+  async toggleSubnetDisabled(id: string | number): Promise<Subnet | undefined> {
     const dhcp4 = await keaService.getConfig();
     const strId = String(id);
     const subnet = (dhcp4.subnet4 || []).find((s) => String(s.id) === strId || s.subnet === strId);
@@ -333,7 +380,11 @@ class DhcpConfigService {
   /**
    * Reservation Management within a Subnet
    */
-  async addReservation(subnetId, reservation, options = {}) {
+  async addReservation(
+    subnetId: string | number,
+    reservation: { hwAddress: string; ipAddress: string; hostname?: string },
+    options: { overwrite?: boolean } = {}
+  ): Promise<KeaReservation> {
     const { hwAddress, ipAddress, hostname } = reservation;
     if (!hwAddress || !ipAddress) {
       throw new Error('MAC address (hwAddress) and IP address are required');
@@ -372,7 +423,7 @@ class DhcpConfigService {
       }
     }
 
-    const newRes = {
+    const newRes: KeaReservation = {
       'hw-address': cleanMac,
       'ip-address': cleanIp,
       hostname: hostname ? hostname.trim() : ''
@@ -383,7 +434,11 @@ class DhcpConfigService {
     return newRes;
   }
 
-  async updateReservation(subnetId, targetHwAddress, updated) {
+  async updateReservation(
+    subnetId: string | number,
+    targetHwAddress: string,
+    updated: { hwAddress?: string; ipAddress?: string; hostname?: string }
+  ): Promise<KeaReservation> {
     const dhcp4 = await keaService.getConfig();
     const strId = String(subnetId);
     const subnet = (dhcp4.subnet4 || []).find((s) => String(s.id) === strId || s.subnet === strId);
@@ -405,7 +460,7 @@ class DhcpConfigService {
     return res;
   }
 
-  async deleteReservation(subnetId, targetHwAddress) {
+  async deleteReservation(subnetId: string | number, targetHwAddress: string): Promise<{ success: boolean; message: string }> {
     const dhcp4 = await keaService.getConfig();
     const strId = String(subnetId);
     const subnet = (dhcp4.subnet4 || []).find((s) => String(s.id) === strId || s.subnet === strId);
@@ -427,7 +482,7 @@ class DhcpConfigService {
     return { success: true, message: `Reservation for ${targetHwAddress} deleted successfully` };
   }
 
-  async getGlobalSettings() {
+  async getGlobalSettings(): Promise<GlobalSettings> {
     const dhcp4 = await keaService.getConfig();
     const dnsOpt = (dhcp4['option-data'] || []).find((o) => o.name === 'domain-name-servers');
     const domainOpt = (dhcp4['option-data'] || []).find((o) => o.name === 'domain-name');
@@ -442,17 +497,17 @@ class DhcpConfigService {
     };
   }
 
-  async updateGlobalSettings(settings) {
+  async updateGlobalSettings(settings: Partial<GlobalSettings>): Promise<GlobalSettings> {
     const dhcp4 = await keaService.getConfig();
 
     if (settings.defaultLeaseTime) {
-      dhcp4['valid-lifetime'] = parseInt(settings.defaultLeaseTime, 10);
+      dhcp4['valid-lifetime'] = parseInt(String(settings.defaultLeaseTime), 10);
     }
     if (settings.renewTimer) {
-      dhcp4['renew-timer'] = parseInt(settings.renewTimer, 10);
+      dhcp4['renew-timer'] = parseInt(String(settings.renewTimer), 10);
     }
     if (settings.rebindTimer) {
-      dhcp4['rebind-timer'] = parseInt(settings.rebindTimer, 10);
+      dhcp4['rebind-timer'] = parseInt(String(settings.rebindTimer), 10);
     }
     if (settings.authoritative !== undefined) {
       dhcp4.authoritative = Boolean(settings.authoritative);
@@ -463,7 +518,7 @@ class DhcpConfigService {
     }
 
     if (settings.domainNameServers !== undefined) {
-      let opt = dhcp4['option-data'].find((o) => o.name === 'domain-name-servers');
+      const opt = dhcp4['option-data'].find((o) => o.name === 'domain-name-servers');
       if (opt) {
         opt.data = settings.domainNameServers;
       } else if (settings.domainNameServers) {
@@ -472,7 +527,7 @@ class DhcpConfigService {
     }
 
     if (settings.domainName !== undefined) {
-      let opt = dhcp4['option-data'].find((o) => o.name === 'domain-name');
+      const opt = dhcp4['option-data'].find((o) => o.name === 'domain-name');
       if (opt) {
         opt.data = settings.domainName;
       } else if (settings.domainName) {
@@ -485,4 +540,4 @@ class DhcpConfigService {
   }
 }
 
-module.exports = new DhcpConfigService();
+export default new DhcpConfigService();

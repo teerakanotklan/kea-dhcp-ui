@@ -1,7 +1,9 @@
-const jwt = require('jsonwebtoken');
-const config = require('../config/default');
+import { Request, Response, NextFunction } from 'express';
+import jwt from 'jsonwebtoken';
+import config from '../config/default';
+import { User } from '../../../shared/types/auth';
 
-function authMiddleware(req, res, next) {
+export function authMiddleware(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'No authorization token provided' });
@@ -9,15 +11,15 @@ function authMiddleware(req, res, next) {
 
   const token = authHeader.split(' ')[1];
   try {
-    const decoded = jwt.verify(token, config.jwtSecret);
+    const decoded = jwt.verify(token, config.jwtSecret) as User;
     if (decoded.role !== 'admin') {
       return res.status(403).json({ error: 'Access denied: Admin privileges required' });
     }
     req.user = decoded;
-    next();
+    return next();
   } catch (err) {
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
 }
 
-module.exports = authMiddleware;
+export default authMiddleware;

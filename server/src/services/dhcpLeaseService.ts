@@ -1,11 +1,13 @@
-const keaService = require('./keaService');
-const dhcpConfigService = require('./dhcpConfigService');
+import keaService from './keaService';
+import dhcpConfigService from './dhcpConfigService';
+import { DhcpLease, LeaseStatus } from '../../../shared/types/lease';
+import { Subnet } from '../../../shared/types/subnet';
 
-function ipToInt(ip) {
+function ipToInt(ip: string): number {
   return ip.split('.').reduce((acc, octet) => (acc << 8) + parseInt(octet, 10), 0) >>> 0;
 }
 
-function isIpInSubnet(ip, cidrStr) {
+export function isIpInSubnet(ip: string, cidrStr?: string): boolean {
   if (!cidrStr || !cidrStr.includes('/')) return false;
   const [rangeIp, prefixStr] = cidrStr.split('/');
   const prefix = parseInt(prefixStr, 10);
@@ -14,16 +16,24 @@ function isIpInSubnet(ip, cidrStr) {
   return (ipToInt(ip) & mask) === (ipToInt(rangeIp) & mask);
 }
 
-class DhcpLeaseService {
-  async getLeases() {
+export interface ConvertReservationInput {
+  ip: string;
+  mac: string;
+  hostname?: string;
+  subnetId?: string | number;
+  overwrite?: boolean;
+}
+
+export class DhcpLeaseService {
+  async getLeases(): Promise<DhcpLease[]> {
     try {
       const rawLeases = await keaService.getAllLeases();
       const now = Date.now();
 
       // 1. Fetch current host reservations to identify reserved leases and conflicts
-      const resByIp = new Map();
-      const resByMac = new Map();
-      let subnetsList = [];
+      const resByIp = new Map<string, { ip?: string; mac?: string; hostname?: string; name?: string }>();
+      const resByMac = new Map<string, { ip?: string; mac?: string; hostname?: string; name?: string }>();
+      let subnetsList: Subnet[] = [];
       try {
         const cfg = await dhcpConfigService.parseConfig();
         if (cfg && cfg.hosts) {
@@ -42,13 +52,13 @@ class DhcpLeaseService {
       }
 
       // 2. Deduplicate raw leases by IP, keeping the latest entry (highest cltt)
-      const leaseMap = new Map();
+      const leaseMap = new Map<string, typeof rawLeases[0]>();
       for (const l of rawLeases) {
         const ip = l['ip-address'] || l.ip || '';
         if (!ip) continue;
-        const cltt = parseInt(l.cltt || 0, 10);
+        const cltt = parseInt(String(l.cltt || 0), 10);
         const existing = leaseMap.get(ip);
-        if (!existing || cltt > parseInt(existing.cltt || 0, 10)) {
+        if (!existing || cltt > parseInt(String(existing.cltt || 0), 10)) {
           leaseMap.set(ip, l);
         }
       }
@@ -56,15 +66,15 @@ class DhcpLeaseService {
       const deduplicated = Array.from(leaseMap.values());
 
       // 3. Transform and calculate status with strict matching
-      const leases = deduplicated.map((l) => {
+      const leases: DhcpLease[] = deduplicated.map((l) => {
         const ip = l['ip-address'] || l.ip || '';
         const mac = (l['hw-address'] || l.mac || '').toLowerCase();
         const hostname = l.hostname || '';
-        const cltt = parseInt(l.cltt || 0, 10);
-        const validLft = parseInt(l['valid-lft'] || l.validLft || 0, 10);
+        const cltt = parseInt(String(l.cltt || 0), 10);
+        const validLft = parseInt(String(l['valid-lft'] || l.validLft || 0), 10);
 
-        let starts = null;
-        let ends = null;
+        let starts: string | null = null;
+        let ends: string | null = null;
         let remainingSeconds = 0;
         let isExpired = false;
 
@@ -86,10 +96,10 @@ class DhcpLeaseService {
         const resForIp = resByIp.get(ip);
         const resForMac = mac ? resByMac.get(mac) : null;
 
-        let status = 'active';
+        let status: LeaseStatus = 'active';
         let isReserved = false;
         let isConflict = false;
-        let conflictInfo = null;
+        let conflictInfo: { reservedForMac?: string; reservedForHostname?: string } | null = null;
 
         if (resForIp && (resForIp.mac || '').toLowerCase() === mac) {
           // Strict Match: Both IP and MAC match the configured reservation
@@ -115,7 +125,7 @@ class DhcpLeaseService {
         }
 
         // Match subnet ID or subnet CIDR
-        let subnetId = l['subnet-id'] || 1;
+        let subnetId: string | number = l['subnet-id'] || 1;
         const matchedSubnet = subnetsList.find((s) => isIpInSubnet(ip, s.subnetCidr));
         if (matchedSubnet) {
           subnetId = matchedSubnet.id;
@@ -149,14 +159,14 @@ class DhcpLeaseService {
     }
   }
 
-  async releaseLease(ip) {
+  async releaseLease(ip: string): Promise<{ success: boolean; message: string }> {
     if (!ip) {
       throw new Error('IP address is required');
     }
     return await keaService.releaseLease(ip);
   }
 
-  async convertToReservation({ ip, mac, hostname, subnetId, overwrite = false }) {
+  async convertToReservation({ ip, mac, hostname, subnetId, overwrite = false }: ConvertReservationInput): Promise<{ success: boolean; message: string }> {
     if (!ip || !mac) {
       throw new Error('IP address and MAC address are required');
     }
@@ -171,7 +181,7 @@ class DhcpLeaseService {
     const cleanHostname = (hostname || '').trim();
 
     // Determine target subnet: either matched by subnetId or by IP CIDR
-    let targetSubnet = null;
+    let targetSubnet: Subnet | undefined = undefined;
     if (subnetId) {
       targetSubnet = subnets.find((s) => String(s.id) === String(subnetId) || s.subnetCidr === subnetId);
     }
@@ -201,4 +211,4 @@ class DhcpLeaseService {
   }
 }
 
-module.exports = new DhcpLeaseService();
+export default new DhcpLeaseService();

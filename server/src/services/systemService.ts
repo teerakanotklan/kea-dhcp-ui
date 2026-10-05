@@ -1,8 +1,9 @@
-const { execSync, execFileSync } = require('child_process');
-const config = require('../config/default');
-const keaService = require('./keaService');
+import { execSync, execFileSync } from 'child_process';
+import config from '../config/default';
+import { DhcpServiceStatus, ServiceDaemonStatus, ServiceAction } from '../../../shared/types/service';
+import { ServiceLogEntry, LogLevel } from '../../../shared/types/logs';
 
-function checkSystemdService(serviceName) {
+function checkSystemdService(serviceName: string): ServiceDaemonStatus {
   try {
     const output = execSync(`sudo systemctl status ${serviceName}`, {
       encoding: 'utf8',
@@ -21,8 +22,9 @@ function checkSystemdService(serviceName) {
       since: sinceMatch ? sinceMatch[1] : null,
       raw: output
     };
-  } catch (err) {
-    const output = ((err.stdout || '') + '\n' + (err.stderr || '')).trim();
+  } catch (err: unknown) {
+    const errorObj = err as { stdout?: string | Buffer; stderr?: string | Buffer; message?: string };
+    const output = ((errorObj.stdout || '') + '\n' + (errorObj.stderr || '')).trim();
     const isActive = output.includes('Active: active (running)');
     const pidMatch = output.match(/Main PID:\s+(\d+)/);
     const sinceMatch = output.match(/Active: active \(running\) since (.+);/);
@@ -33,19 +35,22 @@ function checkSystemdService(serviceName) {
       status: isActive ? 'active (running)' : 'inactive (dead)',
       pid: pidMatch ? parseInt(pidMatch[1], 10) : null,
       since: sinceMatch ? sinceMatch[1] : null,
-      raw: output || err.message,
-      error: err.message
+      raw: output || errorObj.message || 'Error executing systemctl status',
+      error: errorObj.message
     };
   }
 }
 
-class SystemService {
+export class SystemService {
+  private dhcpService: string;
+  private ctrlAgentService: string;
+
   constructor() {
     this.dhcpService = config.dhcpService;
     this.ctrlAgentService = config.ctrlAgentService;
   }
 
-  getServiceStatus() {
+  getServiceStatus(): DhcpServiceStatus {
     const dhcpStatus = checkSystemdService(this.dhcpService);
     const ctrlAgentStatus = checkSystemdService(this.ctrlAgentService);
 
@@ -62,13 +67,13 @@ class SystemService {
     };
   }
 
-  controlService(action, target = 'all') {
-    const validActions = ['restart', 'reload', 'stop', 'start'];
+  controlService(action: ServiceAction, target = 'all'): { success: boolean; message: string } {
+    const validActions: ServiceAction[] = ['restart', 'reload', 'stop', 'start'];
     if (!validActions.includes(action)) {
       throw new Error(`Invalid service action: ${action}`);
     }
 
-    const servicesToControl = [];
+    const servicesToControl: string[] = [];
     if (target === 'dhcp4' || target === 'dhcp') {
       servicesToControl.push(this.dhcpService);
     } else if (target === 'ctrl-agent' || target === 'agent') {
@@ -77,7 +82,7 @@ class SystemService {
       servicesToControl.push(this.dhcpService, this.ctrlAgentService);
     }
 
-    const results = [];
+    const results: string[] = [];
     for (const sName of servicesToControl) {
       try {
         execSync(`sudo systemctl ${action} ${sName}`, {
@@ -85,8 +90,9 @@ class SystemService {
           stdio: ['pipe', 'pipe', 'pipe']
         });
         results.push(`${sName}: ${action} OK`);
-      } catch (err) {
-        const errMsg = (err.stderr || err.stdout || err.message).toString().trim();
+      } catch (err: unknown) {
+        const errorObj = err as { stdout?: string | Buffer; stderr?: string | Buffer; message?: string };
+        const errMsg = (errorObj.stderr || errorObj.stdout || errorObj.message || '').toString().trim();
         throw new Error(`Failed to ${action} ${sName}: ${errMsg}`);
       }
     }
@@ -97,7 +103,7 @@ class SystemService {
     };
   }
 
-  validateDhcpConfig(customPath = null) {
+  validateDhcpConfig(customPath: string | null = null): { success: boolean; output?: string; error?: string } {
     const pathToCheck = customPath || config.confPath;
 
     try {
@@ -106,15 +112,16 @@ class SystemService {
         stdio: ['pipe', 'pipe', 'pipe']
       });
       return { success: true, output };
-    } catch (err) {
-      const errorText = (err.stdout || err.stderr || err.message).toString().trim();
+    } catch (err: unknown) {
+      const errorObj = err as { stdout?: string | Buffer; stderr?: string | Buffer; message?: string };
+      const errorText = (errorObj.stdout || errorObj.stderr || errorObj.message || '').toString().trim();
       return { success: false, error: errorText };
     }
   }
 
-  getLogs(service = 'all', limit = 100) {
+  getLogs(service = 'all', limit: number | string = 100): ServiceLogEntry[] {
     try {
-      const safeLimit = Math.min(Math.max(parseInt(limit, 10) || 100, 1), 500);
+      const safeLimit = Math.min(Math.max(parseInt(String(limit), 10) || 100, 1), 500);
       let which = 'all';
       const s = (service || 'all').toLowerCase();
       if (s === 'ctrl-agent' || s === 'agent' || s === 'kea-ctrl-agent') {
@@ -129,13 +136,13 @@ class SystemService {
       });
 
       const lines = output.trim().split('\n').filter(Boolean);
-      const parsedLogs = [];
+      const parsedLogs: ServiceLogEntry[] = [];
 
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
         let timestamp = line.slice(0, 15).trim();
         let svc = 'kea-dhcp4';
-        let level = 'INFO';
+        let level: LogLevel = 'INFO';
         let event = 'GENERAL';
         let message = line;
 
@@ -164,7 +171,7 @@ class SystemService {
         if (keaMatch) {
           timestamp = keaMatch[1];
           const rawLvl = keaMatch[2];
-          level = rawLvl === 'WARNING' ? 'WARN' : (rawLvl === 'FATAL' ? 'ERROR' : rawLvl);
+          level = (rawLvl === 'WARNING' ? 'WARN' : (rawLvl === 'FATAL' ? 'ERROR' : rawLvl)) as LogLevel;
           event = keaMatch[4] || 'INFO';
           message = keaMatch[5] || '';
           if (keaMatch[3].startsWith('kea-ctrl-agent')) {
@@ -206,7 +213,8 @@ class SystemService {
       }
 
       return parsedLogs;
-    } catch (err) {
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
       return [
         {
           id: 'log-err-0',
@@ -214,12 +222,12 @@ class SystemService {
           service: 'system',
           level: 'WARN',
           event: 'SYSTEM_NOTICE',
-          message: `Notice: System logs query unavailable (${err.message}). Verify sudoers permissions.`,
-          raw: err.message
+          message: `Notice: System logs query unavailable (${errMsg}). Verify sudoers permissions.`,
+          raw: errMsg
         }
       ];
     }
   }
 }
 
-module.exports = new SystemService();
+export default new SystemService();

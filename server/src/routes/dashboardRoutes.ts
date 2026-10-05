@@ -1,16 +1,18 @@
-const express = require('express');
-const router = express.Router();
-const authMiddleware = require('../middleware/auth');
-const dhcpConfigService = require('../services/dhcpConfigService');
-const dhcpLeaseService = require('../services/dhcpLeaseService');
-const systemService = require('../services/systemService');
+import express, { Request, Response } from 'express';
+import authMiddleware from '../middleware/auth';
+import dhcpConfigService from '../services/dhcpConfigService';
+import dhcpLeaseService from '../services/dhcpLeaseService';
+import systemService from '../services/systemService';
+import { DashboardData, SubnetStatItem } from '../../../shared/types/service';
 
-function ipToInt(ip) {
+const router = express.Router();
+
+function ipToInt(ip?: string): number {
   if (!ip) return 0;
   return ip.split('.').reduce((acc, octet) => (acc << 8) + parseInt(octet, 10), 0) >>> 0;
 }
 
-function calculateRangeCapacity(start, end) {
+function calculateRangeCapacity(start?: string, end?: string): number {
   if (!start || !end) return 0;
   try {
     const s = ipToInt(start);
@@ -21,7 +23,7 @@ function calculateRangeCapacity(start, end) {
   }
 }
 
-function isIpInRange(ip, start, end) {
+function isIpInRange(ip?: string, start?: string, end?: string): boolean {
   if (!ip || !start || !end) return false;
   try {
     const target = ipToInt(ip);
@@ -32,7 +34,7 @@ function isIpInRange(ip, start, end) {
 }
 
 // GET /api/dashboard
-router.get('/', authMiddleware, async (req, res) => {
+router.get('/', authMiddleware, async (_req: Request, res: Response) => {
   try {
     const serviceStatus = systemService.getServiceStatus();
     const configData = await dhcpConfigService.parseConfig();
@@ -42,7 +44,7 @@ router.get('/', authMiddleware, async (req, res) => {
     const expiredLeases = leases.filter((l) => l.status === 'expired');
 
     let totalPoolCapacity = 0;
-    const subnetStats = configData.subnets.map((s) => {
+    const subnetStats: SubnetStatItem[] = configData.subnets.map((s) => {
       const capacity = calculateRangeCapacity(s.rangeStart, s.rangeEnd);
       totalPoolCapacity += capacity;
 
@@ -66,7 +68,7 @@ router.get('/', authMiddleware, async (req, res) => {
       ? Math.round((activeLeases.length / totalPoolCapacity) * 100)
       : 0;
 
-    res.json({
+    const dashboardPayload: DashboardData = {
       service: serviceStatus,
       counts: {
         subnets: configData.subnets.length,
@@ -78,10 +80,13 @@ router.get('/', authMiddleware, async (req, res) => {
       },
       subnetStats,
       recentLeases: leases.slice(0, 5)
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+    };
+
+    return res.json(dashboardPayload);
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    return res.status(500).json({ error: errMsg });
   }
 });
 
-module.exports = router;
+export default router;

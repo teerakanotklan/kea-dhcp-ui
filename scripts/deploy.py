@@ -168,16 +168,16 @@ def main():
     print(f"  ✓ Synchronized {transferred} files")
 
     # 3. Build & Install Dependencies on Server
-    print("[3/5] Updating server dependencies and building client...")
-    build_cmd = f"cd {REMOTE_DIR} && npm install --omit=dev && npm --prefix server install --omit=dev && npm --prefix client install && npm --prefix client run build"
+    print("[3/5] Updating dependencies and building client & server...")
+    build_cmd = f"cd {REMOTE_DIR} && npm install --omit=dev && npm --prefix server install && npm --prefix server run build && npm --prefix client install && npm --prefix client run build"
     code, out, err = run_remote_command(ssh, build_cmd)
     if code != 0:
-        print("  ✗ Client build failed:")
+        print("  ✗ Build failed:")
         print(out)
         print(err)
         ssh.close()
         sys.exit(1)
-    print("  ✓ Client build succeeded")
+    print("  ✓ Client & Server build succeeded")
 
     # 4. Restart Service
     print("[4/5] Restarting kea-dhcp-ui.service...")

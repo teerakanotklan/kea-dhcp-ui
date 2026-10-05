@@ -1,5 +1,6 @@
-const path = require('path');
-const fs = require('fs');
+import path from 'path';
+import fs from 'fs';
+import crypto from 'crypto';
 
 const isLinux = process.platform === 'linux';
 
@@ -25,8 +26,10 @@ if (fs.existsSync('/etc/os-release')) {
 const dhcpService = process.env.KEA_DHCP4_SERVICE || (isRhelBased ? 'kea-dhcp4' : 'kea-dhcp4-server');
 const ctrlAgentService = process.env.KEA_CTRL_AGENT_SERVICE || 'kea-ctrl-agent';
 
+import { DATA_DIR } from './paths';
+
 // User data directory for local operational state
-const dataDir = path.join(__dirname, '..', 'data');
+const dataDir = DATA_DIR;
 if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
 }
@@ -62,7 +65,7 @@ let jwtSecret = process.env.JWT_SECRET;
 if (!jwtSecret) {
   if (process.env.NODE_ENV === 'production') {
     console.warn('[Config] JWT_SECRET is not set; using a random per-process secret (sessions reset on restart).');
-    jwtSecret = require('crypto').randomBytes(32).toString('hex');
+    jwtSecret = crypto.randomBytes(32).toString('hex');
   } else {
     jwtSecret = 'kea-dhcp-super-secret-key-2026'; // development only
   }
@@ -71,8 +74,23 @@ if (!jwtSecret) {
 // Root-owned helper invoked through sudo for validation and log reads
 const helperPath = process.env.KEA_HELPER_PATH || '/usr/local/sbin/kea-dhcp-ui-helper';
 
-module.exports = {
-  port: parseInt(process.env.PORT, 10) || 3000,
+export interface AppConfig {
+  port: number;
+  jwtSecret: string;
+  helperPath: string;
+  jwtExpiresIn: string;
+  keaCtrlAgentUrl: string;
+  confPath: string;
+  ctrlAgentConfPath: string;
+  backupDir: string;
+  dhcpService: string;
+  ctrlAgentService: string;
+  isDebianBased: boolean;
+  isRhelBased: boolean;
+}
+
+const config: AppConfig = {
+  port: parseInt(process.env.PORT || '3000', 10),
   jwtSecret,
   helperPath,
   jwtExpiresIn: '24h',
@@ -85,3 +103,5 @@ module.exports = {
   isDebianBased,
   isRhelBased,
 };
+
+export default config;

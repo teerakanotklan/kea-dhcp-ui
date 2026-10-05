@@ -3,7 +3,8 @@ import { IpAddressSchema } from './common';
 
 export const DhcpCustomOptionSchema = z.object({
   name: z.string(),
-  value: z.string(),
+  value: z.string().optional(),
+  data: z.string().optional(),
   code: z.number().optional(),
   isCustom: z.boolean().optional()
 });

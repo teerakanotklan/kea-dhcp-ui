@@ -4,6 +4,7 @@ import { IpAddressSchema, MacAddressSchema } from './common';
 export const LeaseStatusSchema = z.enum([
   'active',
   'reserved',
+  'conflict',
   'expired',
   'declined',
   'abandoned',
