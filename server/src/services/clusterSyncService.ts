@@ -340,12 +340,20 @@ export class ClusterSyncService {
 
       hooks = hooks.filter((h) => !h.library.includes('libdhcp_ha.so'));
 
-      const peers = clusterService.getNodes().map((n) => ({
-        name: n.name.replace(/[^a-zA-Z0-9_-]/g, '_'),
-        url: n.agentUrl || `http://${n.host}:8000/`,
-        role: n.role === 'primary' ? 'primary' : 'secondary',
-        'auto-failover': settings.autoFailover
-      }));
+      const detectedIp = clusterService.detectLocalIp();
+      const peers = clusterService.getNodes().map((n) => {
+        let peerUrl = n.agentUrl || `http://${n.host}:8000/`;
+        if (n.isLocal && (peerUrl.includes('127.0.0.1') || peerUrl.includes('localhost'))) {
+          peerUrl = `http://${detectedIp}:8000/`;
+        }
+        return {
+          name: n.name.replace(/[^a-zA-Z0-9_-]/g, '_'),
+          url: peerUrl,
+          role: n.role === 'primary' ? 'primary' : (settings.mode === 'load-balancing' ? 'secondary' : 'standby'),
+          'auto-failover': settings.autoFailover
+        };
+      });
+
 
       hooks.push({
         library: hookLibPath,

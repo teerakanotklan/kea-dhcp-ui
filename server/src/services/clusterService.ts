@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import os from 'os';
 import config from '../config/default';
 import { DATA_DIR } from '../config/paths';
 import keaService from './keaService';
@@ -19,6 +20,22 @@ export interface StoredClusterData {
   settings: ClusterSettings;
   nodes: ClusterNode[];
 }
+
+export interface ClusterPairPayload {
+  clusterSecret: string;
+  mode?: 'failover' | 'load-balancing' | 'standalone';
+  settings?: Partial<ClusterSettings>;
+  initiatorNode: {
+    id?: string;
+    name: string;
+    host: string;
+    uiPort?: number;
+    agentUrl?: string;
+    role: 'primary' | 'secondary' | 'backup';
+  };
+  assignedRole: 'primary' | 'secondary' | 'backup';
+}
+
 
 export class ClusterService {
   private data: StoredClusterData;
@@ -178,7 +195,120 @@ export class ClusterService {
     return merged;
   }
 
-  async addNode(nodeData: Omit<ClusterNode, 'id'>): Promise<ClusterNode> {
+  /**
+   * Detect current non-loopback IPv4 address
+   */
+  detectLocalIp(): string {
+    const interfaces = os.networkInterfaces();
+    for (const name of Object.keys(interfaces)) {
+      for (const iface of interfaces[name] || []) {
+        if (iface.family === 'IPv4' && !iface.internal) {
+          return iface.address;
+        }
+      }
+    }
+    return '127.0.0.1';
+  }
+
+  /**
+   * Pair with remote cluster, auto-negotiating roles and setting up HA
+   */
+  async pairWithCluster(payload: ClusterPairPayload): Promise<{
+    success: boolean;
+    message: string;
+    localNode: ClusterNode;
+    settings: ClusterSettings;
+  }> {
+    // 1. Adopt shared cluster secret and settings
+    this.data.settings.clusterSecret = payload.clusterSecret;
+    this.data.settings.enabled = true;
+    if (payload.mode) {
+      this.data.settings.mode = payload.mode;
+    }
+    if (payload.settings) {
+      Object.assign(this.data.settings, payload.settings);
+    }
+
+    // 2. Update local node role to the assigned role (e.g. from primary to secondary)
+    let localNode = this.data.nodes.find((n) => n.isLocal);
+    if (localNode) {
+      localNode.role = payload.assignedRole;
+      localNode.status = 'online';
+      localNode.syncStatus = 'synced';
+    } else {
+      localNode = {
+        id: 'local-node',
+        name: 'Node (Local)',
+        host: '127.0.0.1',
+        uiPort: config.port,
+        agentUrl: config.keaCtrlAgentUrl,
+        role: payload.assignedRole,
+        isLocal: true,
+        status: 'online',
+        syncStatus: 'synced',
+        lastHeartbeat: new Date().toISOString()
+      };
+      this.data.nodes.push(localNode);
+    }
+
+    // 3. Register or update the initiator node
+    const initiatorHost = payload.initiatorNode.host;
+    let peerNode = this.data.nodes.find(
+      (n) => !n.isLocal && (n.host === initiatorHost || (payload.initiatorNode.id && n.id === payload.initiatorNode.id))
+    );
+
+    if (peerNode) {
+      peerNode.name = payload.initiatorNode.name;
+      peerNode.host = initiatorHost;
+      peerNode.uiPort = payload.initiatorNode.uiPort || 3000;
+      peerNode.agentUrl = payload.initiatorNode.agentUrl || `http://${initiatorHost}:8000`;
+      peerNode.role = payload.initiatorNode.role;
+      peerNode.status = 'online';
+      peerNode.syncStatus = 'synced';
+      peerNode.lastHeartbeat = new Date().toISOString();
+    } else {
+      peerNode = {
+        id: payload.initiatorNode.id || `node-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        name: payload.initiatorNode.name,
+        host: initiatorHost,
+        uiPort: payload.initiatorNode.uiPort || 3000,
+        agentUrl: payload.initiatorNode.agentUrl || `http://${initiatorHost}:8000`,
+        role: payload.initiatorNode.role,
+        isLocal: false,
+        status: 'online',
+        syncStatus: 'synced',
+        lastHeartbeat: new Date().toISOString()
+      };
+      this.data.nodes.push(peerNode);
+    }
+
+    // Ensure all other nodes are not local
+    this.data.nodes.forEach((n) => {
+      if (n !== localNode) n.isLocal = false;
+    });
+
+    this.saveClusterData(this.data);
+
+    // 4. Apply Kea HA Hook configuration immediately
+    await this.applyKeaHaConfig();
+
+    this.addSyncLog({
+      action: 'pull',
+      targetNodeId: peerNode.id,
+      targetNodeName: peerNode.name,
+      success: true,
+      message: `Paired with ${peerNode.name}. Local role updated to ${payload.assignedRole}.`
+    });
+
+    return {
+      success: true,
+      message: `Paired successfully with ${peerNode.name}. Local role set to ${payload.assignedRole}.`,
+      localNode,
+      settings: this.data.settings
+    };
+  }
+
+  async addNode(nodeData: Omit<ClusterNode, 'id'>, remotePassword?: string): Promise<ClusterNode> {
     const id = `node-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     const newNode: ClusterNode = {
       ...nodeData,
@@ -195,6 +325,64 @@ export class ClusterService {
 
     this.data.nodes.push(newNode);
     this.saveClusterData(this.data);
+
+    // If adding a remote peer, automatically perform pairing handshake with remote node
+    if (!newNode.isLocal && newNode.host !== '127.0.0.1') {
+      try {
+        const localNode = this.getLocalNode() || this.data.nodes[0];
+        const detectedLocalIp = this.detectLocalIp();
+        const pairPayload: ClusterPairPayload = {
+          clusterSecret: this.data.settings.clusterSecret,
+          mode: this.data.settings.mode,
+          settings: {
+            heartbeatDelayMs: this.data.settings.heartbeatDelayMs,
+            maxResponseDelayMs: this.data.settings.maxResponseDelayMs,
+            maxAckDelayMs: this.data.settings.maxAckDelayMs,
+            autoFailover: this.data.settings.autoFailover,
+            haHookLibPath: this.data.settings.haHookLibPath
+          },
+          initiatorNode: {
+            id: localNode.id,
+            name: localNode.name,
+            host: localNode.host !== '127.0.0.1' ? localNode.host : detectedLocalIp,
+            uiPort: localNode.uiPort || config.port,
+            agentUrl: localNode.agentUrl || `http://${detectedLocalIp}:8000`,
+            role: localNode.role
+          },
+          assignedRole: newNode.role
+        };
+
+        const pairUrl = `http://${newNode.host}:${newNode.uiPort}/api/cluster/pair`;
+        const res = await fetch(pairUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Cluster-Secret': this.data.settings.clusterSecret
+          },
+          body: JSON.stringify({
+            ...pairPayload,
+            adminPassword: remotePassword
+          }),
+          signal: AbortSignal.timeout(5000)
+        });
+
+        if (res.ok) {
+          newNode.status = 'online';
+          newNode.syncStatus = 'synced';
+          newNode.lastHeartbeat = new Date().toISOString();
+          this.saveClusterData(this.data);
+          this.addSyncLog({
+            action: 'push',
+            targetNodeId: newNode.id,
+            targetNodeName: newNode.name,
+            success: true,
+            message: `Automatic pairing handshake with ${newNode.name} succeeded. Remote role set to ${newNode.role}.`
+          });
+        }
+      } catch (err: unknown) {
+        console.warn(`[ClusterService] Automatic pairing handshake with ${newNode.host} timed out or failed:`, err);
+      }
+    }
 
     // Reapply Kea HA hook configuration with new peers
     if (this.data.settings.enabled) {
@@ -261,12 +449,20 @@ export class ClusterService {
       if (this.data.settings.enabled && this.data.nodes.length >= 2) {
         // Construct HA Hook parameters
         const mode = this.data.settings.mode === 'load-balancing' ? 'load-balancing' : 'hot-standby';
-        const peers = this.data.nodes.map((n) => ({
-          name: n.name.replace(/[^a-zA-Z0-9_-]/g, '_'),
-          url: n.agentUrl || `http://${n.host}:8000/`,
-          role: n.role === 'primary' ? 'primary' : 'secondary',
-          'auto-failover': this.data.settings.autoFailover
-        }));
+        const detectedIp = this.detectLocalIp();
+
+        const peers = this.data.nodes.map((n) => {
+          let peerUrl = n.agentUrl || `http://${n.host}:8000/`;
+          if (n.isLocal && (peerUrl.includes('127.0.0.1') || peerUrl.includes('localhost'))) {
+            peerUrl = `http://${detectedIp}:8000/`;
+          }
+          return {
+            name: n.name.replace(/[^a-zA-Z0-9_-]/g, '_'),
+            url: peerUrl,
+            role: n.role === 'primary' ? 'primary' : (mode === 'hot-standby' ? 'standby' : 'secondary'),
+            'auto-failover': this.data.settings.autoFailover
+          };
+        });
 
         const localNode = this.getLocalNode() || this.data.nodes[0];
         const thisServerName = localNode.name.replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -298,6 +494,7 @@ export class ClusterService {
   }
 
   /**
+
    * Query Kea HA status using Kea Control Agent command status-get
    */
   async getKeaHaStatus(): Promise<Record<string, unknown> | null> {

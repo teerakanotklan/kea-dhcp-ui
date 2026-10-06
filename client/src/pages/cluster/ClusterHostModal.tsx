@@ -29,8 +29,10 @@ export function ClusterHostModal({
   const [agentUrl, setAgentUrl] = useState('');
   const [role, setRole] = useState<NodeRole>('secondary');
   const [isLocal, setIsLocal] = useState(false);
+  const [adminPassword, setAdminPassword] = useState('');
 
   const [saving, setSaving] = useState(false);
+
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{
     success: boolean;
@@ -108,9 +110,11 @@ export function ClusterHostModal({
         uiPort: Number(uiPort),
         agentUrl: agentUrl.trim() || `http://${host.trim()}:8000`,
         role,
-        isLocal
-      });
+        isLocal,
+        ...(adminPassword.trim() ? { adminPassword: adminPassword.trim() } : {})
+      } as any);
       onClose();
+
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to save host';
       setError(msg);
@@ -246,8 +250,27 @@ export function ClusterHostModal({
               </div>
             </div>
 
+            {!isLocal && !node && (
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+                  Remote Admin Password (Optional)
+                </label>
+                <input
+                  type="password"
+                  placeholder="Enter remote password for 1-click auto pairing"
+                  value={adminPassword}
+                  onChange={(e) => setAdminPassword(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50/50 dark:bg-slate-800/50 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-cyan-500 text-sm"
+                />
+                <span className="text-[11px] text-slate-400 dark:text-slate-500 mt-1 block">
+                  Enables 1-click automatic pairing: the remote node will automatically transition its role and configure Kea HA.
+                </span>
+              </div>
+            )}
+
             {/* Test Connection Button & Result */}
             <div className="pt-2">
+
               <div className="flex items-center justify-between pb-2">
                 <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
                   Connectivity Check
