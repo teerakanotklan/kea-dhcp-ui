@@ -47,3 +47,7 @@ server/data/*
 !server/data/backups/
 server/data/backups/*
 !server/data/backups/.gitkeep
+
+# Temporary scripts & scratch
+scratch/
+

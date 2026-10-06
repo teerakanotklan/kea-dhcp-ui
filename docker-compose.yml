@@ -1,0 +1,25 @@
+services:
+  kea-dhcp-ui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: kea-dhcp-ui
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - JWT_SECRET=${JWT_SECRET:-kea-dhcp-ui-default-secret-change-me}
+      - KEA_CTRL_AGENT_URL=${KEA_CTRL_AGENT_URL:-http://host.docker.internal:8000}
+      - KEA_CONF_PATH=${KEA_CONF_PATH:-/etc/kea/kea-dhcp4.conf}
+      - KEA_CTRL_AGENT_CONF_PATH=${KEA_CTRL_AGENT_CONF_PATH:-/etc/kea/kea-ctrl-agent.conf}
+      - KEA_BACKUP_DIR=${KEA_BACKUP_DIR:-/etc/kea/backups}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
+    volumes:
+      - ./server/data:/app/server/data
+      - /etc/kea:/etc/kea
+      - /run/kea:/run/kea
+      - /var/lib/kea:/var/lib/kea
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

@@ -8,16 +8,15 @@
 #   - Fedora 38+
 #
 # Safe to re-run (idempotent):
-#   - An existing /etc/kea/kea-dhcp4.conf is never replaced by the template
-#     (it is backed up and only patched if the control socket / lease hook is
-#     missing).
-#   - Secrets (JWT_SECRET) live in /etc/kea-dhcp-ui/env and are kept across runs.
-#   - The admin account is only created on first install.
+#   - Existing configurations and secrets are safely backed up and preserved.
+#   - Verbose background tasks are hidden and logged to /var/log/kea-dhcp-ui-install.log.
+#   - Supports direct execution via GitHub URL pipe:
+#       curl -fsSL https://raw.githubusercontent.com/teerakanotklan/kea-dhcp-ui/main/install.sh | sudo bash
 # ==============================================================================
 
 set -euo pipefail
 
-# Text Formatting
+# Text Styling
 BOLD='\033[1m'
 GREEN='\033[0;32m'
 CYAN='\033[0;36m'
@@ -25,51 +24,73 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
 
-log_info() {
-    echo -e "${CYAN}[INFO]${NC} $1"
-}
+LOG_FILE="/var/log/kea-dhcp-ui-install.log"
+mkdir -p "$(dirname "$LOG_FILE")"
+touch "$LOG_FILE"
+chmod 600 "$LOG_FILE"
 
-log_success() {
-    echo -e "${GREEN}[✔ SUCCESS]${NC} $1"
-}
+echo -e "\n${BOLD}${CYAN}==========================================================${NC}"
+echo -e "${BOLD}${CYAN}       Kea DHCP Web UI - Automated Linux Installer        ${NC}"
+echo -e "${BOLD}${CYAN}==========================================================${NC}"
+echo -e "Installer Log: ${BOLD}${CYAN}${LOG_FILE}${NC}\n"
 
-log_warn() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
+# Helper for executing tasks silently in background with modern CLI spinner
+run_step() {
+    local title="$1"
+    shift
+    local cmd="$*"
 
-log_error() {
-    echo -e "${RED}[ERROR]${NC} $1" >&2
+    echo "--- [$(date '+%Y-%m-%d %H:%M:%S')] START: ${title} ---" >> "$LOG_FILE"
+
+    if [[ -t 1 ]]; then
+        bash -c "$cmd" >> "$LOG_FILE" 2>&1 &
+        local pid=$!
+        local spin='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+        local i=0
+        while kill -0 "$pid" 2>/dev/null; do
+            local c="${spin:i++%${#spin}:1}"
+            printf "\r  \033[0;36m%s\033[0m %s...   " "$c" "$title"
+            sleep 0.1
+        done
+        wait "$pid"
+        local status=$?
+    else
+        echo "  [RUNNING] ${title}..."
+        bash -c "$cmd" >> "$LOG_FILE" 2>&1
+        local status=$?
+    fi
+
+    echo "--- [$(date '+%Y-%m-%d %H:%M:%S')] END: ${title} (exit: ${status}) ---" >> "$LOG_FILE"
+
+    if [[ $status -eq 0 ]]; then
+        printf "\r  \033[0;32m✔\033[0m %s                                                 \n" "$title"
+    else
+        printf "\r  \033[0;31m✖\033[0m %s (FAILED)                                        \n" "$title"
+        echo -e "\n${RED}[ERROR] Step failed:${NC} ${title}" >&2
+        echo -e "${YELLOW}--- Last 30 lines of ${LOG_FILE} ---${NC}" >&2
+        tail -n 30 "$LOG_FILE" >&2
+        echo -e "${YELLOW}------------------------------------------------------------${NC}\n" >&2
+        exit 1
+    fi
 }
 
 # 1. Verify Root Privileges
 if [[ $EUID -ne 0 ]]; then
-    log_error "This script must be run as root. Please run with sudo:"
-    echo "  sudo bash $0"
+    echo -e "${RED}[ERROR] This installer must be run as root.${NC}" >&2
+    echo "Please run: sudo bash $0 or curl -fsSL ... | sudo bash" >&2
     exit 1
 fi
 
-echo -e "${BOLD}${CYAN}"
-echo "=========================================================="
-echo "    Kea DHCP Server Web UI - Linux Automated Installer    "
-echo "=========================================================="
-echo -e "${NC}"
-
-INSTALL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-log_info "Installation directory: ${INSTALL_DIR}"
-
-# 2. Detect Operating System Distribution
+# 2. Identify Linux Distribution
 if [[ ! -f /etc/os-release ]]; then
-    log_error "Cannot identify Linux distribution (/etc/os-release not found)."
+    echo -e "${RED}[ERROR] Cannot identify Linux distribution (/etc/os-release not found).${NC}" >&2
     exit 1
 fi
 
 . /etc/os-release
-
 OS_ID="${ID:-unknown}"
 OS_LIKE="${ID_LIKE:-}"
 OS_NAME="${PRETTY_NAME:-$OS_ID}"
-
-log_info "Detected Operating System: ${BOLD}${OS_NAME}${NC}"
 
 PKG_MANAGER=""
 KEA_DHCP4_SERVICE=""
@@ -85,112 +106,134 @@ elif [[ "$OS_ID" =~ (rhel|centos|rocky|almalinux|fedora) || "$OS_LIKE" =~ (rhel|
     fi
     KEA_DHCP4_SERVICE="kea-dhcp4"
 else
-    log_error "Unsupported Linux distribution family: ${OS_ID}"
+    echo -e "${RED}[ERROR] Unsupported Linux distribution family: ${OS_ID}${NC}" >&2
     exit 1
 fi
 
-log_info "Package Manager: ${PKG_MANAGER}"
-log_info "Kea DHCP4 Service: ${KEA_DHCP4_SERVICE}"
-log_info "Kea Control Agent Service: ${KEA_AGENT_SERVICE}"
+echo -e "Target System: ${BOLD}${OS_NAME}${NC} (Package Manager: ${BOLD}${PKG_MANAGER}${NC})\n"
 
-# 3. Update Package Cache and Install Base Dependencies
-log_info "Updating package lists and installing required system packages..."
-
-if [[ "$PKG_MANAGER" == "apt" ]]; then
-    export DEBIAN_FRONTEND=noninteractive
-    apt-get update -y -q
-    apt-get install -y -q curl ca-certificates sudo coreutils openssl \
-        kea-dhcp4-server kea-ctrl-agent
-else
-    $PKG_MANAGER makecache -y
-    if [[ "$OS_ID" != "fedora" ]]; then
-        # EPEL is only needed (and only exists) on RHEL-family enterprise distros
-        $PKG_MANAGER install -y epel-release \
-            || log_warn "Could not install epel-release; continuing without it."
-    fi
-    $PKG_MANAGER install -y curl ca-certificates sudo coreutils openssl kea
-    # Hook libraries (lease_cmds) ship in a separate package on RHEL-family distros
-    $PKG_MANAGER install -y kea-hooks \
-        || log_warn "Package 'kea-hooks' not available; lease commands hook may be missing."
-fi
-
-log_success "System packages installed successfully."
-
-# 4. Check / Install Node.js (v20 LTS recommended)
-NEED_NODE=true
-if command -v node &>/dev/null; then
-    NODE_VERSION=$(node -v | sed 's/v//' | cut -d'.' -f1)
-    if [[ "$NODE_VERSION" -ge 18 ]]; then
-        log_info "Found existing Node.js $(node -v) (Satisfies requirement >= 18)."
-        NEED_NODE=false
+# Step 1: Install System Base & Kea DHCP Packages
+run_step "[1/8] Updating package repository and installing Kea DHCP" '
+    if [[ "'"$PKG_MANAGER"'" == "apt" ]]; then
+        export DEBIAN_FRONTEND=noninteractive
+        apt-get update -y -q
+        apt-get install -y -q curl git ca-certificates sudo coreutils openssl \
+            kea-dhcp4-server kea-ctrl-agent
     else
-        log_warn "Existing Node.js $(node -v) is older than v18. Upgrading to Node.js 20 LTS..."
+        '"$PKG_MANAGER"' makecache -y
+        if [[ "'"$OS_ID"'" != "fedora" ]]; then
+            '"$PKG_MANAGER"' install -y epel-release || true
+        fi
+        '"$PKG_MANAGER"' install -y curl git ca-certificates sudo coreutils openssl kea
+        '"$PKG_MANAGER"' install -y kea-hooks || true
+    fi
+'
+
+# Step 2: Check & Install Node.js (20 LTS) & pnpm
+run_step "[2/8] Setting up Node.js 20 LTS runtime & pnpm" '
+    NEED_NODE=true
+    if command -v node &>/dev/null; then
+        V=$(node -v | sed "s/v//" | cut -d"." -f1)
+        if [[ "$V" -ge 18 ]]; then
+            NEED_NODE=false
+        fi
+    fi
+
+    if [[ "$NEED_NODE" == "true" ]]; then
+        NODESOURCE_TMP="$(mktemp)"
+        if [[ "'"$PKG_MANAGER"'" == "apt" ]]; then
+            export DEBIAN_FRONTEND=noninteractive
+            curl -fsSL -o "$NODESOURCE_TMP" https://deb.nodesource.com/setup_20.x
+            bash "$NODESOURCE_TMP"
+            apt-get install -y -q nodejs
+        else
+            curl -fsSL -o "$NODESOURCE_TMP" https://rpm.nodesource.com/setup_20.x
+            bash "$NODESOURCE_TMP"
+            '"$PKG_MANAGER"' install -y nodejs
+        fi
+        rm -f "$NODESOURCE_TMP"
+    fi
+
+    if ! command -v pnpm &>/dev/null; then
+        npm install -g pnpm@10.33.0 || npm install -g pnpm
+    fi
+'
+
+# Step 3: Determine and prepare INSTALL_DIR (supports curl | bash from GitHub)
+SCRIPT_SOURCE="${BASH_SOURCE[0]:-}"
+INSTALL_DIR=""
+
+if [[ -n "$SCRIPT_SOURCE" && "$SCRIPT_SOURCE" != "/dev/fd/"* && -f "$SCRIPT_SOURCE" ]]; then
+    POTENTIAL_DIR="$(cd "$(dirname "$SCRIPT_SOURCE")" && pwd)"
+    if [[ -f "${POTENTIAL_DIR}/package.json" && -f "${POTENTIAL_DIR}/server/index.js" ]]; then
+        INSTALL_DIR="$POTENTIAL_DIR"
     fi
 fi
 
-if [[ "$NEED_NODE" == "true" ]]; then
-    log_info "Installing Node.js 20 LTS via official NodeSource repository..."
-    NODESOURCE_SCRIPT="$(mktemp)"
-    trap 'rm -f "$NODESOURCE_SCRIPT"' EXIT
-    if [[ "$PKG_MANAGER" == "apt" ]]; then
-        curl -fsSL -o "$NODESOURCE_SCRIPT" https://deb.nodesource.com/setup_20.x
-        bash "$NODESOURCE_SCRIPT"
-        apt-get install -y -q nodejs
+if [[ -z "$INSTALL_DIR" ]]; then
+    if [[ -f "$(pwd)/package.json" && -f "$(pwd)/server/index.js" ]]; then
+        INSTALL_DIR="$(pwd)"
     else
-        curl -fsSL -o "$NODESOURCE_SCRIPT" https://rpm.nodesource.com/setup_20.x
-        bash "$NODESOURCE_SCRIPT"
-        $PKG_MANAGER install -y nodejs
+        INSTALL_DIR="/opt/kea-dhcp-ui"
     fi
-    log_success "Installed Node.js $(node -v) and npm $(npm -v)."
 fi
 
-if ! command -v pnpm &>/dev/null; then
-    log_info "Installing pnpm package manager..."
-    npm install -g pnpm
-fi
-log_success "Found pnpm $(pnpm -v)."
+run_step "[3/8] Preparing Kea DHCP UI repository at ${INSTALL_DIR}" '
+    REPO_URL="https://github.com/teerakanotklan/kea-dhcp-ui.git"
+    if [[ ! -d "'"$INSTALL_DIR"'/.git" ]]; then
+        mkdir -p "'"$INSTALL_DIR"'"
+        if [[ -d "'"$INSTALL_DIR"'" && -z "$(ls -A "'"$INSTALL_DIR"'" 2>/dev/null)" ]]; then
+            git clone "$REPO_URL" "'"$INSTALL_DIR"'"
+        else
+            TMP_CLONE="$(mktemp -d)"
+            git clone "$REPO_URL" "$TMP_CLONE"
+            cp -r "$TMP_CLONE"/.* "$TMP_CLONE"/* "'"$INSTALL_DIR"'" 2>/dev/null || true
+            rm -rf "$TMP_CLONE"
+        fi
+    else
+        git -C "'"$INSTALL_DIR"'" fetch origin main
+        git -C "'"$INSTALL_DIR"'" checkout main
+        git -C "'"$INSTALL_DIR"'" reset --hard origin/main
+    fi
+'
 
-# Locate required binaries (absolute paths are baked into sudoers / helper)
+cd "$INSTALL_DIR"
+
+# Locate required binaries
 KEA_BIN="$(command -v kea-dhcp4 || true)"
 [[ -z "$KEA_BIN" && -x /usr/sbin/kea-dhcp4 ]] && KEA_BIN=/usr/sbin/kea-dhcp4
-if [[ -z "$KEA_BIN" ]]; then
-    log_error "kea-dhcp4 binary not found after package installation."
-    exit 1
-fi
 SYSTEMCTL_BIN="$(command -v systemctl)"
 JOURNALCTL_BIN="$(command -v journalctl)"
 
-# 5. Create Dedicated System User 'dhcpui'
-SYSTEM_USER="dhcpui"
-log_info "Configuring dedicated system user '${SYSTEM_USER}'..."
-
-if ! id -u "$SYSTEM_USER" &>/dev/null; then
-    useradd -r -s /usr/sbin/nologin -c "Kea DHCP Web UI Service Account" "$SYSTEM_USER" || \
-    useradd -r -s /sbin/nologin -c "Kea DHCP Web UI Service Account" "$SYSTEM_USER"
-    log_success "Created system user '${SYSTEM_USER}'."
-else
-    log_info "System user '${SYSTEM_USER}' already exists."
+if [[ -z "$KEA_BIN" ]]; then
+    echo -e "${RED}[ERROR] kea-dhcp4 binary not found after installation.${NC}" >&2
+    exit 1
 fi
 
-# 6. Privileged helper + restricted sudoers for 'dhcpui'
-#    The service never gets to run kea-dhcp4 / journalctl with free-form arguments.
-#    It may only call the root-owned helper, which validates its own arguments.
+# Step 4: Configure Dedicated System User 'dhcpui' & Privileged Helper
+SYSTEM_USER="dhcpui"
 HELPER="/usr/local/sbin/kea-dhcp-ui-helper"
-log_info "Installing privileged helper ${HELPER}..."
+SUDOERS_FILE="/etc/sudoers.d/kea-dhcp-ui"
 
-cat << 'EOF' | sed \
-    -e "s|@KEA_BIN@|${KEA_BIN}|g" \
-    -e "s|@JOURNALCTL@|${JOURNALCTL_BIN}|g" \
-    -e "s|@DHCP_SVC@|${KEA_DHCP4_SERVICE}|g" \
-    -e "s|@AGENT_SVC@|${KEA_AGENT_SERVICE}|g" > "$HELPER"
+run_step "[4/8] Configuring system security, user '${SYSTEM_USER}' & sudoers" '
+    if ! id -u "'"$SYSTEM_USER"'" &>/dev/null; then
+        useradd -r -s /usr/sbin/nologin -c "Kea DHCP Web UI Service Account" "'"$SYSTEM_USER"'" || \
+        useradd -r -s /sbin/nologin -c "Kea DHCP Web UI Service Account" "'"$SYSTEM_USER"'"
+    fi
+
+    cat << '\''EOF'\'' | sed \
+        -e "s|@KEA_BIN@|'"${KEA_BIN}"'|g" \
+        -e "s|@JOURNALCTL@|'"${JOURNALCTL_BIN}"'|g" \
+        -e "s|@DHCP_SVC@|'"${KEA_DHCP4_SERVICE}"'|g" \
+        -e "s|@AGENT_SVC@|'"${KEA_AGENT_SERVICE}"'|g" > "'"$HELPER"'"
 #!/usr/bin/env bash
 # Managed by kea-dhcp-ui install.sh - do not edit.
 set -euo pipefail
 
-KEA_BIN='@KEA_BIN@'
-JOURNALCTL='@JOURNALCTL@'
-DHCP_SVC='@DHCP_SVC@'
-AGENT_SVC='@AGENT_SVC@'
+KEA_BIN='\''@KEA_BIN@'\''
+JOURNALCTL='\''@JOURNALCTL@'\''
+DHCP_SVC='\''@DHCP_SVC@'\''
+AGENT_SVC='\''@AGENT_SVC@'\''
 
 case "${1:-}" in
     validate)
@@ -221,104 +264,80 @@ case "${1:-}" in
         ;;
 esac
 EOF
-chown root:root "$HELPER"
-chmod 0755 "$HELPER"
+    chown root:root "'"$HELPER"'"
+    chmod 0755 "'"$HELPER"'"
 
-SUDOERS_FILE="/etc/sudoers.d/kea-dhcp-ui"
-SUDOERS_TMP="$(mktemp)"
-log_info "Writing restricted sudo privileges to ${SUDOERS_FILE}..."
+    SUDOERS_TMP="$(mktemp)"
+    SYSTEMCTL_PATHS=("'"$SYSTEMCTL_BIN"'")
+    SYSTEMCTL_REAL="$(readlink -f "'"$SYSTEMCTL_BIN"'")"
+    [[ "$SYSTEMCTL_REAL" != "'"$SYSTEMCTL_BIN"'" ]] && SYSTEMCTL_PATHS+=("$SYSTEMCTL_REAL")
 
-# systemctl may be reachable through /bin and /usr/bin; allow both resolved forms
-SYSTEMCTL_PATHS=("$SYSTEMCTL_BIN")
-SYSTEMCTL_REAL="$(readlink -f "$SYSTEMCTL_BIN")"
-[[ "$SYSTEMCTL_REAL" != "$SYSTEMCTL_BIN" ]] && SYSTEMCTL_PATHS+=("$SYSTEMCTL_REAL")
-
-{
-    echo "# Sudo privileges for Kea DHCP Web UI (${SYSTEM_USER}) - managed by install.sh"
-    echo "Defaults:${SYSTEM_USER} !requiretty"
-    for ctl in "${SYSTEMCTL_PATHS[@]}"; do
-        for svc in "$KEA_DHCP4_SERVICE" "$KEA_AGENT_SERVICE"; do
-            for action in start stop restart reload status; do
-                echo "${SYSTEM_USER} ALL=(root) NOPASSWD: ${ctl} ${action} ${svc}"
+    {
+        echo "# Sudo privileges for Kea DHCP Web UI ('"$SYSTEM_USER"') - managed by install.sh"
+        echo "Defaults:'"$SYSTEM_USER"' !requiretty"
+        for ctl in "${SYSTEMCTL_PATHS[@]}"; do
+            for svc in "'"$KEA_DHCP4_SERVICE"'" "'"$KEA_AGENT_SERVICE"'"; do
+                for action in start stop restart reload status; do
+                    echo "'"$SYSTEM_USER"' ALL=(root) NOPASSWD: ${ctl} ${action} ${svc}"
+                done
             done
         done
-    done
-    echo "${SYSTEM_USER} ALL=(root) NOPASSWD: ${HELPER} validate *, ${HELPER} logs *"
-} > "$SUDOERS_TMP"
+        echo "'"$SYSTEM_USER"' ALL=(root) NOPASSWD: '"$HELPER"' validate *, '"$HELPER"' logs *"
+    } > "$SUDOERS_TMP"
 
-if visudo -cf "$SUDOERS_TMP" &>/dev/null; then
-    install -m 0440 -o root -g root "$SUDOERS_TMP" "$SUDOERS_FILE"
-    rm -f "$SUDOERS_TMP"
-    log_success "Sudoers rules validated successfully."
-else
-    log_error "Sudoers syntax check failed. Not installing ${SUDOERS_FILE}."
-    rm -f "$SUDOERS_TMP"
-    exit 1
-fi
+    if visudo -cf "$SUDOERS_TMP" &>/dev/null; then
+        install -m 0440 -o root -g root "$SUDOERS_TMP" "'"$SUDOERS_FILE"'"
+        rm -f "$SUDOERS_TMP"
+    else
+        rm -f "$SUDOERS_TMP"
+        exit 1
+    fi
 
-# 7. Configure Kea Control Agent Systemd Override (Bypass ConditionFileNotEmpty if present)
-mkdir -p "/etc/systemd/system/${KEA_AGENT_SERVICE}.service.d"
-cat << 'EOF' > "/etc/systemd/system/${KEA_AGENT_SERVICE}.service.d/override.conf"
+    # Override for kea-ctrl-agent
+    mkdir -p "/etc/systemd/system/'"${KEA_AGENT_SERVICE}"'.service.d"
+    cat << '\''EOF'\'' > "/etc/systemd/system/'"${KEA_AGENT_SERVICE}"'.service.d/override.conf"
 [Unit]
 ConditionFileNotEmpty=
 EOF
-systemctl daemon-reload
+    systemctl daemon-reload
+'
 
-# 8. Locate Hook Libraries (Lease Commands & High Availability) & Create / Patch Kea Configuration Files
+# Step 5: Kea DHCP Configuration & Hook Libraries Detection
 HOOK_PATH="$(find /usr/lib /usr/lib64 /usr/local/lib -name 'libdhcp_lease_cmds.so' 2>/dev/null | head -n 1 || true)"
 HA_HOOK_PATH="$(find /usr/lib /usr/lib64 /usr/local/lib -name 'libdhcp_ha.so' 2>/dev/null | head -n 1 || true)"
-log_info "Discovered Kea lease hook path: ${HOOK_PATH:-None (Memfile fallback)}"
-log_info "Discovered Kea High Availability hook path: ${HA_HOOK_PATH:-None}"
-
-mkdir -p /etc/kea/backups
-mkdir -p /var/lib/kea
-mkdir -p /run/kea
-
 KEA_CONF="/etc/kea/kea-dhcp4.conf"
 AGENT_CONF="/etc/kea/kea-ctrl-agent.conf"
-STAMP="$(date +%Y%m%d%H%M%S)"
-CONF_BACKUP=""
-AGENT_BACKUP=""
-DHCP_CHANGED=false
 SOCKET="/run/kea/kea4-ctrl-socket"
+STAMP="$(date +%Y%m%d%H%M%S)"
 
-rollback_configs() {
-    log_warn "Rolling back Kea configuration files..."
-    if [[ -n "$CONF_BACKUP" ]]; then cp -p "$CONF_BACKUP" "$KEA_CONF"; fi
-    if [[ -n "$AGENT_BACKUP" ]]; then cp -p "$AGENT_BACKUP" "$AGENT_CONF"; fi
-}
+run_step "[5/8] Configuring Kea DHCP & Control Agent sockets" '
+    mkdir -p /etc/kea/backups /var/lib/kea /run/kea
 
-# --- kea-dhcp4.conf: never overwrite an existing configuration ---
-if [[ -f "$KEA_CONF" ]]; then
-    CONF_BACKUP="${KEA_CONF}.bak.${STAMP}"
-    cp -p "$KEA_CONF" "$CONF_BACKUP"
-    log_info "Existing ${KEA_CONF} kept. Backup: ${CONF_BACKUP}"
-
-    # Patch in only what the UI needs (control socket + lease_cmds hook).
-    # Comments are stripped if a patch is required; the backup retains them.
-    if PATCH_OUT="$(KEA_CONF="$KEA_CONF" HOOK_PATH="$HOOK_PATH" SOCKET="$SOCKET" node - <<'JS'
-const fs = require('fs');
+    if [[ -f "'"$KEA_CONF"'" ]]; then
+        cp -p "'"$KEA_CONF"'" "'"${KEA_CONF}.bak.${STAMP}"'"
+        KEA_CONF="'"$KEA_CONF"'" HOOK_PATH="'"$HOOK_PATH"'" SOCKET="'"$SOCKET"'" node - << '\''JS'\''
+const fs = require("fs");
 const file = process.env.KEA_CONF;
-const hook = process.env.HOOK_PATH || '';
+const hook = process.env.HOOK_PATH || "";
 
 function stripComments(s) {
-  let out = '', i = 0, inStr = false;
+  let out = "", i = 0, inStr = false;
   while (i < s.length) {
     const c = s[i], n = s[i + 1];
     if (inStr) {
       out += c;
-      if (c === '\\') { out += n; i += 2; continue; }
-      if (c === '"') inStr = false;
+      if (c === "\\") { out += n; i += 2; continue; }
+      if (c === "\"") inStr = false;
       i++; continue;
     }
-    if (c === '"') { inStr = true; out += c; i++; continue; }
-    if ((c === '/' && n === '/') || c === '#') {
-      while (i < s.length && s[i] !== '\n') i++;
+    if (c === "\"") { inStr = true; out += c; i++; continue; }
+    if ((c === "/" && n === "/") || c === "#") {
+      while (i < s.length && s[i] !== "\n") i++;
       continue;
     }
-    if (c === '/' && n === '*') {
+    if (c === "/" && n === "*") {
       i += 2;
-      while (i < s.length && !(s[i] === '*' && s[i + 1] === '/')) i++;
+      while (i < s.length && !(s[i] === "*" && s[i + 1] === "/")) i++;
       i += 2; continue;
     }
     out += c; i++;
@@ -326,47 +345,38 @@ function stripComments(s) {
   return out;
 }
 
-const obj = JSON.parse(stripComments(fs.readFileSync(file, 'utf8')));
-const d = obj.Dhcp4;
-if (!d) { console.error('No Dhcp4 section found'); process.exit(3); }
-
-let changed = false;
-if (!d['control-socket']) {
-  d['control-socket'] = { 'socket-type': 'unix', 'socket-name': process.env.SOCKET };
-  changed = true;
-}
-if (hook) {
-  const libs = Array.isArray(d['hooks-libraries']) ? d['hooks-libraries'] : [];
-  if (!libs.some(h => /lease_cmds/.test(h.library || ''))) {
-    libs.push({ library: hook });
-    d['hooks-libraries'] = libs;
-    changed = true;
+try {
+  const obj = JSON.parse(stripComments(fs.readFileSync(file, "utf8")));
+  const d = obj.Dhcp4;
+  if (d) {
+    let changed = false;
+    if (!d["control-socket"]) {
+      d["control-socket"] = { "socket-type": "unix", "socket-name": process.env.SOCKET };
+      changed = true;
+    }
+    if (hook) {
+      const libs = Array.isArray(d["hooks-libraries"]) ? d["hooks-libraries"] : [];
+      if (!libs.some(h => /lease_cmds/.test(h.library || ""))) {
+        libs.push({ library: hook });
+        d["hooks-libraries"] = libs;
+        changed = true;
+      }
+    }
+    if (changed) {
+      fs.writeFileSync(file, JSON.stringify(obj, null, 2) + "\n");
+    }
   }
+} catch (e) {
+  console.error("Config parse error:", e);
 }
-if (changed) {
-  fs.writeFileSync(file, JSON.stringify(obj, null, 2) + '\n');
-  console.error('PATCHED');
-}
-console.log(d['control-socket']['socket-name'] || process.env.SOCKET);
 JS
-    )"; then
-        SOCKET="$PATCH_OUT"
-        # Re-detect whether the file was modified compared to the backup
-        if ! cmp -s "$CONF_BACKUP" "$KEA_CONF"; then
-            DHCP_CHANGED=true
-            log_info "Patched ${KEA_CONF} with missing control-socket / lease_cmds hook."
-        fi
     else
-        log_warn "Could not parse ${KEA_CONF} as JSON; left unchanged."
-        log_warn "Ensure it defines a unix control-socket and (optionally) the lease_cmds hook."
-    fi
-else
-    HOOK_BLOCK=""
-    if [[ -n "$HOOK_PATH" ]]; then
-        HOOK_BLOCK="\"hooks-libraries\": [ { \"library\": \"$HOOK_PATH\" } ],"
-    fi
+        HOOK_BLOCK=""
+        if [[ -n "'"$HOOK_PATH"'" ]]; then
+            HOOK_BLOCK="\"hooks-libraries\": [ { \"library\": \"'"$HOOK_PATH"'\" } ],"
+        fi
 
-    cat << EOF > "$KEA_CONF"
+        cat << EOF > "'"$KEA_CONF"'"
 {
   "Dhcp4": {
     "interfaces-config": {
@@ -374,7 +384,7 @@ else
     },
     "control-socket": {
       "socket-type": "unix",
-      "socket-name": "${SOCKET}"
+      "socket-name": "'"$SOCKET"'"
     },
     "lease-database": {
       "type": "memfile",
@@ -408,18 +418,13 @@ else
   }
 }
 EOF
-    DHCP_CHANGED=true
-    log_info "Created ${KEA_CONF} from template (no previous configuration found)."
-fi
+    fi
 
-# --- kea-ctrl-agent.conf: back up, then write (socket follows dhcp4 config) ---
-if [[ -f "$AGENT_CONF" ]]; then
-    AGENT_BACKUP="${AGENT_CONF}.bak.${STAMP}"
-    cp -p "$AGENT_CONF" "$AGENT_BACKUP"
-    log_info "Backed up existing ${AGENT_CONF} to: ${AGENT_BACKUP}"
-fi
+    if [[ -f "'"$AGENT_CONF"'" ]]; then
+        cp -p "'"$AGENT_CONF"'" "'"${AGENT_CONF}.bak.${STAMP}"'"
+    fi
 
-cat << EOF > "$AGENT_CONF"
+    cat << EOF > "'"$AGENT_CONF"'"
 {
   "Control-agent": {
     "http-host": "0.0.0.0",
@@ -427,7 +432,7 @@ cat << EOF > "$AGENT_CONF"
     "control-sockets": {
       "dhcp4": {
         "socket-type": "unix",
-        "socket-name": "${SOCKET}"
+        "socket-name": "'"$SOCKET"'"
       }
     },
     "loggers": [
@@ -445,97 +450,51 @@ cat << EOF > "$AGENT_CONF"
 }
 EOF
 
-# Ensure permissions
-chown root:"$SYSTEM_USER" "$KEA_CONF" "$AGENT_CONF"
-chmod 664 "$KEA_CONF" "$AGENT_CONF"
-chown -R "$SYSTEM_USER":"$SYSTEM_USER" /etc/kea/backups
-chmod 775 /etc/kea/backups
+    chown root:"'"$SYSTEM_USER"'" "'"$KEA_CONF"'" "'"$AGENT_CONF"'"
+    chmod 664 "'"$KEA_CONF"'" "'"$AGENT_CONF"'"
+    chown -R "'"$SYSTEM_USER"'" /etc/kea/backups
+    chmod 775 /etc/kea/backups
 
-# Validate configuration before touching running services
-log_info "Validating Kea configuration..."
-if ! VALIDATION="$("$KEA_BIN" -t "$KEA_CONF" 2>&1)"; then
-    log_error "Kea configuration check failed:"
-    echo "$VALIDATION" >&2
-    rollback_configs
-    exit 1
-fi
+    '"$KEA_BIN"' -t "'"$KEA_CONF"'"
+    systemctl enable "'"$KEA_DHCP4_SERVICE"'" "'"$KEA_AGENT_SERVICE"'" || true
+    systemctl restart "'"$KEA_DHCP4_SERVICE"'" "'"$KEA_AGENT_SERVICE"'" || true
+'
 
-# Enable and (re)start Kea services; only restart DHCP if its config changed
-systemctl enable "${KEA_DHCP4_SERVICE}" "${KEA_AGENT_SERVICE}" || true
+# Step 6: Install Project Dependencies and Build
+run_step "[6/8] Installing project dependencies & building production bundle via pnpm" '
+    cd "'"$INSTALL_DIR"'"
+    rm -rf client/dist server/dist client/node_modules/.vite
+    pnpm install
+    pnpm run build
+'
 
-wait_active() {
-    local svc="$1" i
-    for i in $(seq 1 15); do
-        if systemctl is-active --quiet "$svc"; then return 0; fi
-        sleep 1
-    done
-    return 1
-}
-
-if [[ "$DHCP_CHANGED" == "true" ]]; then
-    systemctl restart "${KEA_DHCP4_SERVICE}" || true
-else
-    systemctl start "${KEA_DHCP4_SERVICE}" || true
-fi
-systemctl restart "${KEA_AGENT_SERVICE}" || true
-
-if ! wait_active "${KEA_DHCP4_SERVICE}" || ! wait_active "${KEA_AGENT_SERVICE}"; then
-    log_error "Kea services did not become active after configuration."
-    journalctl -u "${KEA_DHCP4_SERVICE}" -u "${KEA_AGENT_SERVICE}" -n 20 --no-pager >&2 || true
-    rollback_configs
-    systemctl restart "${KEA_DHCP4_SERVICE}" "${KEA_AGENT_SERVICE}" || true
-    exit 1
-fi
-
-log_success "Kea DHCP Server and Control Agent services are active."
-
-# 9. Install Dependencies & Build Production Bundle
-log_info "Installing project dependencies and building React frontend via pnpm..."
-
-cd "$INSTALL_DIR"
-find client/src -name '*.jsx' -delete 2>/dev/null || true
-find client/src -name '*.js' -delete 2>/dev/null || true
-rm -rf client/dist client/node_modules/.vite
-pnpm install --frozen-lockfile
-pnpm run build
-
-# Code stays root-owned (the service must not be able to modify itself).
-# Only the data directory is writable by the service account.
-DATA_DIR="${INSTALL_DIR}/server/data"
-mkdir -p "$DATA_DIR"
-chown -R root:root "$INSTALL_DIR"
-chown -R "$SYSTEM_USER":"$SYSTEM_USER" "$DATA_DIR"
-chmod 700 "$DATA_DIR"
-
-if ! runuser -u "$SYSTEM_USER" -- test -r "${INSTALL_DIR}/server/index.js"; then
-    log_error "User '${SYSTEM_USER}' cannot read ${INSTALL_DIR}."
-    log_error "Move the project to a world-traversable path (e.g. /opt/kea-dhcp-ui) and re-run."
-    exit 1
-fi
-
-log_success "Project build completed successfully."
-
-# 10. Secrets (/etc/kea-dhcp-ui/env) and initial admin account
+# Step 7: Secrets and Initial Admin Account
 ENV_DIR="/etc/kea-dhcp-ui"
 ENV_FILE="${ENV_DIR}/env"
-mkdir -p "$ENV_DIR"
-chmod 700 "$ENV_DIR"
-if [[ ! -f "$ENV_FILE" ]]; then
-    install -m 0600 -o root -g root /dev/null "$ENV_FILE"
-fi
-if ! grep -q '^JWT_SECRET=' "$ENV_FILE"; then
-    echo "JWT_SECRET=$(openssl rand -hex 32)" >> "$ENV_FILE"
-    log_info "Generated new JWT_SECRET in ${ENV_FILE}."
-fi
-if ! grep -q '^PORT=' "$ENV_FILE"; then
-    echo "PORT=3000" >> "$ENV_FILE"
-fi
-chmod 600 "$ENV_FILE"
-UI_PORT="$(sed -n 's/^PORT=//p' "$ENV_FILE" | tail -n 1)"
-UI_PORT="${UI_PORT:-3000}"
-
-ADMIN_PASSWORD_MSG="(unchanged - existing account preserved)"
+DATA_DIR="${INSTALL_DIR}/server/data"
 USERS_FILE="${DATA_DIR}/users.json"
+ADMIN_PASSWORD_MSG="(unchanged - existing account preserved)"
+
+run_step "[7/8] Initializing environment secrets and user store" '
+    mkdir -p "'"$ENV_DIR"'"
+    chmod 700 "'"$ENV_DIR"'"
+    touch "'"$ENV_FILE"'"
+    chmod 600 "'"$ENV_FILE"'"
+
+    if ! grep -q "^JWT_SECRET=" "'"$ENV_FILE"'"; then
+        echo "JWT_SECRET=$(openssl rand -hex 32)" >> "'"$ENV_FILE"'"
+    fi
+    if ! grep -q "^PORT=" "'"$ENV_FILE"'"; then
+        echo "PORT=3000" >> "'"$ENV_FILE"'"
+    fi
+
+    mkdir -p "'"$DATA_DIR"'"
+    chown -R root:root "'"$INSTALL_DIR"'"
+    chown -R "'"$SYSTEM_USER"':'"$SYSTEM_USER"'" "'"$DATA_DIR"'"
+    chmod 700 "'"$DATA_DIR"'"
+'
+
+# Generate Admin password if users.json does not exist
 if [[ ! -f "$USERS_FILE" ]]; then
     ADMIN_PW="$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-16)"
     ADMIN_PASSWORD="$ADMIN_PW" NODE_ENV=production \
@@ -548,45 +507,35 @@ const p = [
   path.join('${INSTALL_DIR}', 'server', 'services', 'authService.js')
 ].find(x => fs.existsSync(x));
 if (p) require(p);
-" >/dev/null
-    ADMIN_PASSWORD_MSG="${ADMIN_PW}   <-- shown once, store it now"
+" >/dev/null 2>>"$LOG_FILE" || true
+    ADMIN_PASSWORD_MSG="${ADMIN_PW}   (save this password!)"
     unset ADMIN_PW
-else
-    if USERS_FILE="$USERS_FILE" node -e "
-let b;
-try { b = require('${INSTALL_DIR}/server/node_modules/bcryptjs'); }
-catch (e) { b = require('${INSTALL_DIR}/node_modules/bcryptjs'); }
-const u = JSON.parse(require('fs').readFileSync(process.env.USERS_FILE, 'utf8'));
-process.exit(u.some(x => b.compareSync('admin123', x.passwordHash)) ? 0 : 1);" 2>/dev/null; then
-        log_warn "An account still uses the default password 'admin123'. Change it in the UI immediately."
-    fi
 fi
 
-# 11. Configure and Start Systemd Service (kea-dhcp-ui.service)
+# Step 8: Configure Systemd Service & Health Verification
 SERVICE_FILE="/etc/systemd/system/kea-dhcp-ui.service"
 NODE_BIN="$(command -v node)"
 
-log_info "Creating systemd unit: ${SERVICE_FILE}..."
-
-cat << EOF > "$SERVICE_FILE"
+run_step "[8/8] Configuring systemd service & performing health check" '
+    cat << EOF > "'"$SERVICE_FILE"'"
 [Unit]
 Description=Kea DHCP Server Web Management UI
-After=network.target network-online.target ${KEA_DHCP4_SERVICE}.service ${KEA_AGENT_SERVICE}.service
+After=network.target network-online.target '"${KEA_DHCP4_SERVICE}"'.service '"${KEA_AGENT_SERVICE}"'.service
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=${SYSTEM_USER}
-Group=${SYSTEM_USER}
-WorkingDirectory=${INSTALL_DIR}
+User='"${SYSTEM_USER}"'
+Group='"${SYSTEM_USER}"'
+WorkingDirectory='"${INSTALL_DIR}"'
 Environment=NODE_ENV=production
-Environment=KEA_DHCP4_SERVICE=${KEA_DHCP4_SERVICE}
-Environment=KEA_CTRL_AGENT_SERVICE=${KEA_AGENT_SERVICE}
+Environment=KEA_DHCP4_SERVICE='"${KEA_DHCP4_SERVICE}"'
+Environment=KEA_CTRL_AGENT_SERVICE='"${KEA_AGENT_SERVICE}"'
 Environment=KEA_CTRL_AGENT_URL=http://127.0.0.1:8000
-Environment=KEA_CONF_PATH=${KEA_CONF}
-Environment=KEA_HELPER_PATH=${HELPER}
-EnvironmentFile=${ENV_FILE}
-ExecStart=${NODE_BIN} server/index.js
+Environment=KEA_CONF_PATH='"${KEA_CONF}"'
+Environment=KEA_HELPER_PATH='"${HELPER}"'
+EnvironmentFile='"${ENV_FILE}"'
+ExecStart='"${NODE_BIN}"' server/index.js
 Restart=always
 RestartSec=5
 StandardOutput=journal
@@ -597,35 +546,42 @@ SyslogIdentifier=kea-dhcp-ui
 WantedBy=multi-user.target
 EOF
 
-systemctl daemon-reload
-systemctl enable kea-dhcp-ui.service
-systemctl restart kea-dhcp-ui.service
+    systemctl daemon-reload
+    systemctl enable kea-dhcp-ui.service
+    systemctl restart kea-dhcp-ui.service
 
-# 12. Verification & Summary Output
-UI_OK=false
-for _ in $(seq 1 15); do
-    if curl -fsS "http://127.0.0.1:${UI_PORT}/api/health" &>/dev/null; then
-        UI_OK=true
-        break
+    UI_PORT="$(sed -n "s/^PORT=//p" "'"$ENV_FILE"'" | tail -n 1)"
+    UI_PORT="${UI_PORT:-3000}"
+
+    OK=false
+    for i in $(seq 1 20); do
+        if curl -fsS "http://127.0.0.1:${UI_PORT}/api/health" &>/dev/null; then
+            OK=true
+            break
+        fi
+        sleep 1
+    done
+
+    if [[ "$OK" != "true" ]]; then
+        journalctl -u kea-dhcp-ui -n 30 --no-pager
+        exit 1
     fi
-    sleep 1
-done
-if [[ "$UI_OK" != "true" ]]; then
-    log_warn "Web UI health check failed. See: journalctl -u kea-dhcp-ui -n 50"
-fi
+'
 
+UI_PORT="$(sed -n 's/^PORT=//p' "$ENV_FILE" | tail -n 1)"
+UI_PORT="${UI_PORT:-3000}"
 SERVER_IP="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
 SERVER_IP="${SERVER_IP:-127.0.0.1}"
 
 echo -e "\n${BOLD}${GREEN}==========================================================${NC}"
-echo -e "${BOLD}${GREEN}      Kea DHCP Web UI Installation Completed!           ${NC}"
+echo -e "${BOLD}${GREEN}     ✔ Kea DHCP Web UI Successfully Installed!           ${NC}"
 echo -e "${BOLD}${GREEN}==========================================================${NC}"
-echo -e "Web Management UI:   ${BOLD}${CYAN}http://${SERVER_IP}:${UI_PORT}${NC} (or http://localhost:${UI_PORT})"
+echo -e "Web Management UI:   ${BOLD}${CYAN}http://${SERVER_IP}:${UI_PORT}${NC}"
 echo -e "Username:            ${BOLD}admin${NC}"
 echo -e "Password:            ${BOLD}${ADMIN_PASSWORD_MSG}${NC}"
-echo -e "Secrets File:        ${BOLD}${ENV_FILE}${NC}"
-echo -e "System Service:      ${BOLD}systemctl status kea-dhcp-ui${NC}"
-echo -e "Kea DHCP Daemon:     ${BOLD}systemctl status ${KEA_DHCP4_SERVICE}${NC}"
+echo -e "Install Directory:   ${BOLD}${INSTALL_DIR}${NC}"
+echo -e "Log File:            ${BOLD}${LOG_FILE}${NC}"
+echo -e "Service Status:      ${BOLD}systemctl status kea-dhcp-ui${NC}"
+echo -e "Kea Service:         ${BOLD}systemctl status ${KEA_DHCP4_SERVICE}${NC}"
 echo -e "Control Agent:       ${BOLD}systemctl status ${KEA_AGENT_SERVICE}${NC}"
-echo -e "Kea Config:          ${BOLD}${KEA_CONF}${NC}"
 echo -e "${GREEN}==========================================================${NC}\n"
