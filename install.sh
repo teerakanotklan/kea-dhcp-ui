@@ -463,10 +463,12 @@ EOF
 # Step 6: Install Project Dependencies and Build
 run_step "[6/8] Installing project dependencies & building production bundle via pnpm" '
     cd "'"$INSTALL_DIR"'"
+    export CI=true
     rm -rf client/dist server/dist client/node_modules/.vite
     pnpm install
     pnpm run build
 '
+
 
 # Step 7: Secrets and Initial Admin Account
 ENV_DIR="/etc/kea-dhcp-ui"
