@@ -90,13 +90,18 @@ def sync_files(sftp, local_root, remote_root):
     # Files and folders to sync
     include_paths = [
         "package.json",
+        "pnpm-lock.yaml",
+        "pnpm-workspace.yaml",
         "client/package.json",
-        "client/vite.config.js",
+        "client/vite.config.ts",
+        "client/tsconfig.json",
         "client/tailwind.config.js",
         "client/postcss.config.js",
         "client/index.html",
         "client/src",
-        "server"
+        "shared",
+        "server",
+        "install.sh"
     ]
     
     exclude_subdirs = {"node_modules", "dist", ".git", "__pycache__"}
@@ -152,9 +157,18 @@ def main():
     print("[1/5] Connecting via SSH...")
     ssh = get_ssh_client()
     setup_ssh_keys_if_needed(ssh)
-    # Ensure remote directory permissions
+    # Ensure remote directory permissions and clean legacy uncompiled JS directories, old lockfiles & legacy npm node_modules
+    run_remote_command(ssh, f"chown -R {REMOTE_USER}:{REMOTE_USER} {REMOTE_DIR}", sudo=True)
     run_remote_command(ssh, f"chmod -R 777 {REMOTE_DIR}", sudo=True)
-    print("  ✓ Connected successfully and verified permissions")
+    run_remote_command(ssh, f"rm -rf {REMOTE_DIR}/server/config {REMOTE_DIR}/server/middleware {REMOTE_DIR}/server/routes {REMOTE_DIR}/server/services {REMOTE_DIR}/server/scripts")
+    run_remote_command(ssh, f"find {REMOTE_DIR}/client/src -name '*.jsx' -delete 2>/dev/null; find {REMOTE_DIR}/client/src -name '*.js' -delete 2>/dev/null || true")
+    run_remote_command(ssh, f"rm -rf {REMOTE_DIR}/client/dist {REMOTE_DIR}/client/node_modules/.vite")
+    run_remote_command(ssh, f"rm -f {REMOTE_DIR}/package-lock.json {REMOTE_DIR}/client/package-lock.json {REMOTE_DIR}/server/package-lock.json")
+    # Clean legacy npm-installed node_modules if present
+    run_remote_command(ssh, f"test ! -f {REMOTE_DIR}/pnpm-lock.yaml && rm -rf {REMOTE_DIR}/node_modules {REMOTE_DIR}/client/node_modules {REMOTE_DIR}/server/node_modules || true", sudo=True)
+    # Also clean if server/node_modules is still not a pnpm layout
+    run_remote_command(ssh, f"test -d {REMOTE_DIR}/server/node_modules && test ! -d {REMOTE_DIR}/node_modules/.pnpm && rm -rf {REMOTE_DIR}/node_modules {REMOTE_DIR}/client/node_modules {REMOTE_DIR}/server/node_modules || true", sudo=True)
+    print("  ✓ Connected successfully and cleaned legacy directories")
 
     # 2. Sync Files
     print("[2/5] Uploading modified project files...")
@@ -164,16 +178,19 @@ def main():
     print(f"  ✓ Synchronized {transferred} files")
 
     # 3. Build & Install Dependencies on Server
-    print("[3/5] Updating server dependencies and building client...")
-    build_cmd = f"cd {REMOTE_DIR} && npm --prefix server install --omit=dev && npm --prefix client run build"
+    print("[3/5] Updating dependencies and building client & server...")
+    run_remote_command(ssh, "command -v pnpm >/dev/null 2>&1 || npm install -g pnpm", sudo=True)
+    build_cmd = f"cd {REMOTE_DIR} && pnpm install --frozen-lockfile && pnpm run build"
     code, out, err = run_remote_command(ssh, build_cmd)
     if code != 0:
-        print("  ✗ Client build failed:")
+        print("  ✗ Build failed:")
         print(out)
         print(err)
         ssh.close()
         sys.exit(1)
-    print("  ✓ Client build succeeded")
+    # Ensure readability for systemd service user (dhcpui) and data directory write access
+    run_remote_command(ssh, f"chmod -R a+rX {REMOTE_DIR} && chown -R dhcpui:dhcpui {REMOTE_DIR}/server/data", sudo=True)
+    print("  ✓ Client & Server build succeeded")
 
     # 4. Restart Service
     print("[4/5] Restarting kea-dhcp-ui.service...")

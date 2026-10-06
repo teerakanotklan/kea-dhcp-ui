@@ -61,7 +61,7 @@ sudo bash install.sh
 5. Configures `/etc/sudoers.d/kea-dhcp-ui` so `dhcpui` can run only the Kea service lifecycle commands
 6. Locates and enables the `libdhcp_lease_cmds.so` hook library automatically
 7. Creates the initial configs `/etc/kea/kea-dhcp4.conf` and `/etc/kea/kea-ctrl-agent.conf` (connected via the Unix socket `/run/kea/kea4-ctrl-socket`)
-8. Installs Node dependencies and builds the frontend production bundle (`npm run build`)
+8. Installs Node dependencies and builds the frontend production bundle (`pnpm run build`)
 9. Creates and enables the systemd unit `kea-dhcp-ui.service` on port `3000`
 
 ---
