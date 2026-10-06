@@ -298,16 +298,17 @@ export class ClusterService {
   }
 
   /**
-   * Query Kea HA status using Kea Control Agent command ha-status-get
+   * Query Kea HA status using Kea Control Agent command status-get
    */
   async getKeaHaStatus(): Promise<Record<string, unknown> | null> {
     try {
-      const res = await keaService.sendCommand<Record<string, unknown>>('ha-status-get', ['dhcp4']);
+      const res = await keaService.sendCommand<Record<string, unknown>>('status-get', ['dhcp4']);
       return res;
     } catch (e) {
       return null;
     }
   }
+
 
   /**
    * Trigger Kea HA lease sync from partner
