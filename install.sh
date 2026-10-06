@@ -144,6 +144,12 @@ if [[ "$NEED_NODE" == "true" ]]; then
     log_success "Installed Node.js $(node -v) and npm $(npm -v)."
 fi
 
+if ! command -v pnpm &>/dev/null; then
+    log_info "Installing pnpm package manager..."
+    npm install -g pnpm
+fi
+log_success "Found pnpm $(pnpm -v)."
+
 # Locate required binaries (absolute paths are baked into sudoers / helper)
 KEA_BIN="$(command -v kea-dhcp4 || true)"
 [[ -z "$KEA_BIN" && -x /usr/sbin/kea-dhcp4 ]] && KEA_BIN=/usr/sbin/kea-dhcp4
@@ -481,14 +487,12 @@ fi
 
 log_success "Kea DHCP Server and Control Agent services are active."
 
-# 9. Install NPM Dependencies & Build Production Bundle
-log_info "Installing project dependencies and building React frontend..."
+# 9. Install Dependencies & Build Production Bundle
+log_info "Installing project dependencies and building React frontend via pnpm..."
 
 cd "$INSTALL_DIR"
-npm ci
-npm --prefix server ci
-npm --prefix client ci
-npm run build
+pnpm install --frozen-lockfile
+pnpm run build
 
 # Code stays root-owned (the service must not be able to modify itself).
 # Only the data directory is writable by the service account.

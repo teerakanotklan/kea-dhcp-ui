@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import React, { useState, useEffect } from "react";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import {
   ArrowLeft,
   Terminal,
@@ -11,10 +11,10 @@ import {
   Info,
   Bug,
   FileText,
-  Hash
-} from 'lucide-react';
-import { ServiceLogEntry } from '@shared';
-import { NotificationState } from '../components/TableParts';
+  Hash,
+} from "lucide-react";
+import { ServiceLogEntry } from "@shared";
+import { NotificationState } from "../components/TableParts";
 
 export interface LogDetailProps {
   setNotification?: (notif: NotificationState) => void;
@@ -59,10 +59,10 @@ export function LogDetail({ setNotification }: LogDetailProps) {
     }
   }, [log, id]);
 
-  const copyToClipboard = (text: string | undefined, type: 'raw' | 'msg') => {
+  const copyToClipboard = (text: string | undefined, type: "raw" | "msg") => {
     if (!text) return;
     navigator.clipboard.writeText(text);
-    if (type === 'raw') {
+    if (type === "raw") {
       setCopiedRaw(true);
       setTimeout(() => setCopiedRaw(false), 2000);
     } else {
@@ -71,29 +71,29 @@ export function LogDetail({ setNotification }: LogDetailProps) {
     }
     if (setNotification) {
       setNotification({
-        type: 'success',
-        message: `${type === 'raw' ? 'Raw log' : 'Message'} copied to clipboard`
+        type: "success",
+        message: `${type === "raw" ? "Raw log" : "Message"} copied to clipboard`,
       });
     }
   };
 
   const renderServiceBadge = (service?: string) => {
-    const s = (service || '').toLowerCase();
-    if (s.includes('dhcp4')) {
+    const s = (service || "").toLowerCase();
+    if (s.includes("dhcp4")) {
       return (
         <span className="badge border border-indigo-500/20 bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 font-semibold px-2 py-0.5 rounded text-xs">
           kea-dhcp4
         </span>
       );
     }
-    if (s.includes('ctrl') || s.includes('agent')) {
+    if (s.includes("ctrl") || s.includes("agent")) {
       return (
         <span className="badge border border-violet-500/20 bg-violet-500/10 text-violet-700 dark:text-violet-400 font-semibold px-2 py-0.5 rounded text-xs">
           ctrl-agent
         </span>
       );
     }
-    if (s.includes('dhcp6')) {
+    if (s.includes("dhcp6")) {
       return (
         <span className="badge border border-blue-500/20 bg-blue-500/10 text-blue-700 dark:text-blue-400 font-semibold px-2 py-0.5 rounded text-xs">
           kea-dhcp6
@@ -102,39 +102,39 @@ export function LogDetail({ setNotification }: LogDetailProps) {
     }
     return (
       <span className="badge border border-slate-500/20 bg-slate-500/10 text-slate-700 dark:text-slate-400 font-semibold px-2 py-0.5 rounded text-xs">
-        {service || 'kea'}
+        {service || "kea"}
       </span>
     );
   };
 
   const renderLevelBadge = (level?: string) => {
-    const lvl = (level || 'INFO').toUpperCase();
+    const lvl = (level || "INFO").toUpperCase();
     switch (lvl) {
-      case 'ERROR':
-      case 'FATAL':
-      case 'CRIT':
+      case "ERROR":
+      case "FATAL":
+      case "CRIT":
         return (
           <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-xs font-bold border border-rose-500/30 bg-rose-500/15 text-rose-600 dark:text-rose-400">
             <AlertCircle size={13} />
             {lvl}
           </span>
         );
-      case 'WARN':
-      case 'WARNING':
+      case "WARN":
+      case "WARNING":
         return (
           <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-xs font-bold border border-amber-500/30 bg-amber-500/15 text-amber-600 dark:text-amber-400">
             <AlertTriangle size={13} />
             {lvl}
           </span>
         );
-      case 'DEBUG':
+      case "DEBUG":
         return (
           <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-xs font-bold border border-slate-500/30 bg-slate-500/15 text-slate-600 dark:text-slate-400">
             <Bug size={13} />
             {lvl}
           </span>
         );
-      case 'INFO':
+      case "INFO":
       default:
         return (
           <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-xs font-bold border border-emerald-500/30 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
@@ -150,7 +150,7 @@ export function LogDetail({ setNotification }: LogDetailProps) {
       <div className="page-wrapper max-w-6xl mx-auto py-8 px-4 sm:px-8 space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white mb-0.5 flex items-center gap-2">
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white mb-0.5 flex items-center gap-2">
               <Terminal size={22} className="text-indigo-500" />
               Log Details
             </h1>
@@ -163,7 +163,7 @@ export function LogDetail({ setNotification }: LogDetailProps) {
             <button
               type="button"
               className="btn btn-secondary text-xs sm:text-sm flex items-center gap-1.5"
-              onClick={() => navigate('/logs')}
+              onClick={() => navigate("/logs")}
             >
               <ArrowLeft size={15} />
               Back to Logs
@@ -179,13 +179,15 @@ export function LogDetail({ setNotification }: LogDetailProps) {
             Log Entry Not Cached
           </h2>
           <p className="text-sm text-slate-500 dark:text-slate-400 max-w-md mx-auto">
-            Log entry #{id} is not present in local session memory. Live system logs rotate frequently. Please return to the Logs table to inspect recent logs.
+            Log entry #{id} is not present in local session memory. Live system
+            logs rotate frequently. Please return to the Logs table to inspect
+            recent logs.
           </p>
           <div className="pt-2">
             <button
               type="button"
               className="btn btn-primary text-xs sm:text-sm"
-              onClick={() => navigate('/logs')}
+              onClick={() => navigate("/logs")}
             >
               Return to Logs Table
             </button>
@@ -195,8 +197,8 @@ export function LogDetail({ setNotification }: LogDetailProps) {
     );
   }
 
-  const isError = (log.level || '').toUpperCase() === 'ERROR';
-  const isWarn = (log.level || '').toUpperCase() === 'WARN';
+  const isError = (log.level || "").toUpperCase() === "ERROR";
+  const isWarn = (log.level || "").toUpperCase() === "WARN";
 
   return (
     <div className="page-wrapper max-w-6xl mx-auto py-8 px-4 sm:px-8 space-y-6">
@@ -216,7 +218,7 @@ export function LogDetail({ setNotification }: LogDetailProps) {
           <button
             type="button"
             className="btn btn-secondary text-xs sm:text-sm flex items-center gap-1.5"
-            onClick={() => navigate('/logs')}
+            onClick={() => navigate("/logs")}
           >
             <ArrowLeft size={15} />
             Back to Logs
@@ -224,9 +226,13 @@ export function LogDetail({ setNotification }: LogDetailProps) {
           <button
             type="button"
             className="btn btn-secondary text-xs sm:text-sm flex items-center gap-1.5"
-            onClick={() => copyToClipboard(log.raw || log.message, 'raw')}
+            onClick={() => copyToClipboard(log.raw || log.message, "raw")}
           >
-            {copiedRaw ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+            {copiedRaw ? (
+              <Check size={14} className="text-emerald-500" />
+            ) : (
+              <Copy size={14} />
+            )}
             Copy Raw
           </button>
         </div>
@@ -253,7 +259,7 @@ export function LogDetail({ setNotification }: LogDetailProps) {
             Event Tag
           </span>
           <span className="inline-block font-mono text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-800 dark:text-slate-200">
-            {log.event || 'LOG'}
+            {log.event || "LOG"}
           </span>
         </div>
 
@@ -280,9 +286,13 @@ export function LogDetail({ setNotification }: LogDetailProps) {
           <button
             type="button"
             className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
-            onClick={() => copyToClipboard(log.message, 'msg')}
+            onClick={() => copyToClipboard(log.message, "msg")}
           >
-            {copiedMsg ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
+            {copiedMsg ? (
+              <Check size={12} className="text-emerald-500" />
+            ) : (
+              <Copy size={12} />
+            )}
             Copy Message
           </button>
         </div>
@@ -290,10 +300,10 @@ export function LogDetail({ setNotification }: LogDetailProps) {
         <div
           className={`p-4 rounded-xl font-mono text-xs sm:text-sm leading-relaxed break-words select-text border ${
             isError
-              ? 'bg-rose-50 dark:bg-rose-950/20 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-900/40'
+              ? "bg-rose-50 dark:bg-rose-950/20 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-900/40"
               : isWarn
-              ? 'bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-900/40'
-              : 'bg-slate-50 dark:bg-slate-900/50 text-slate-800 dark:text-slate-200 border-slate-200 dark:border-white/10'
+                ? "bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-900/40"
+                : "bg-slate-50 dark:bg-slate-900/50 text-slate-800 dark:text-slate-200 border-slate-200 dark:border-white/10"
           }`}
         >
           {log.message}
@@ -312,9 +322,13 @@ export function LogDetail({ setNotification }: LogDetailProps) {
           <button
             type="button"
             className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
-            onClick={() => copyToClipboard(log.raw || log.message, 'raw')}
+            onClick={() => copyToClipboard(log.raw || log.message, "raw")}
           >
-            {copiedRaw ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
+            {copiedRaw ? (
+              <Check size={12} className="text-emerald-500" />
+            ) : (
+              <Copy size={12} />
+            )}
             Copy Raw
           </button>
         </div>
@@ -339,28 +353,46 @@ export function LogDetail({ setNotification }: LogDetailProps) {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-2 gap-x-6 text-xs divide-y sm:divide-y-0 divide-slate-100 dark:divide-white/5">
           <div className="flex justify-between py-1.5 border-b border-slate-100 dark:border-white/5">
             <span className="text-slate-500 dark:text-slate-400">Log ID</span>
-            <span className="font-mono font-medium text-slate-800 dark:text-slate-200">{log.id || id}</span>
+            <span className="font-mono font-medium text-slate-800 dark:text-slate-200">
+              {log.id || id}
+            </span>
           </div>
           <div className="flex justify-between py-1.5 border-b border-slate-100 dark:border-white/5">
             <span className="text-slate-500 dark:text-slate-400">Daemon</span>
-            <span className="font-mono font-medium text-slate-800 dark:text-slate-200">{log.service || 'kea'}</span>
-          </div>
-          <div className="flex justify-between py-1.5 border-b border-slate-100 dark:border-white/5">
-            <span className="text-slate-500 dark:text-slate-400">Severity Level</span>
-            <span className="font-mono font-medium text-slate-800 dark:text-slate-200">{log.level || 'INFO'}</span>
-          </div>
-          <div className="flex justify-between py-1.5 border-b border-slate-100 dark:border-white/5">
-            <span className="text-slate-500 dark:text-slate-400">Event Tag</span>
-            <span className="font-mono font-medium text-slate-800 dark:text-slate-200">{log.event || 'None'}</span>
-          </div>
-          <div className="flex justify-between py-1.5">
-            <span className="text-slate-500 dark:text-slate-400">Timestamp</span>
-            <span className="font-mono font-medium text-slate-800 dark:text-slate-200">{log.timestamp}</span>
-          </div>
-          <div className="flex justify-between py-1.5">
-            <span className="text-slate-500 dark:text-slate-400">Message Length</span>
             <span className="font-mono font-medium text-slate-800 dark:text-slate-200">
-              {(log.message || '').length} characters
+              {log.service || "kea"}
+            </span>
+          </div>
+          <div className="flex justify-between py-1.5 border-b border-slate-100 dark:border-white/5">
+            <span className="text-slate-500 dark:text-slate-400">
+              Severity Level
+            </span>
+            <span className="font-mono font-medium text-slate-800 dark:text-slate-200">
+              {log.level || "INFO"}
+            </span>
+          </div>
+          <div className="flex justify-between py-1.5 border-b border-slate-100 dark:border-white/5">
+            <span className="text-slate-500 dark:text-slate-400">
+              Event Tag
+            </span>
+            <span className="font-mono font-medium text-slate-800 dark:text-slate-200">
+              {log.event || "None"}
+            </span>
+          </div>
+          <div className="flex justify-between py-1.5">
+            <span className="text-slate-500 dark:text-slate-400">
+              Timestamp
+            </span>
+            <span className="font-mono font-medium text-slate-800 dark:text-slate-200">
+              {log.timestamp}
+            </span>
+          </div>
+          <div className="flex justify-between py-1.5">
+            <span className="text-slate-500 dark:text-slate-400">
+              Message Length
+            </span>
+            <span className="font-mono font-medium text-slate-800 dark:text-slate-200">
+              {(log.message || "").length} characters
             </span>
           </div>
         </div>

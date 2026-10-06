@@ -1,11 +1,17 @@
-import React, { useState, useEffect, useMemo, FormEvent } from 'react';
-import { useAuth } from '../context/AuthContext';
-import { ConfirmModal } from '../components/ConfirmModal';
-import { Pagination } from '../components/Pagination';
-import { ActionDropdown } from '../components/ActionDropdown';
-import { SortableTh, EmptyStateRow, CopyText, TableSkeleton, NotificationState } from '../components/TableParts';
-import { usePersistedState } from '../hooks/usePersistedState';
-import { useSortableData, ColumnsConfig } from '../hooks/useSortableData';
+import React, { useState, useEffect, useMemo, FormEvent } from "react";
+import { useAuth } from "../context/AuthContext";
+import { ConfirmModal } from "../components/ConfirmModal";
+import { Pagination } from "../components/Pagination";
+import { ActionDropdown } from "../components/ActionDropdown";
+import {
+  SortableTh,
+  EmptyStateRow,
+  CopyText,
+  TableSkeleton,
+  NotificationState,
+} from "../components/TableParts";
+import { usePersistedState } from "../hooks/usePersistedState";
+import { useSortableData, ColumnsConfig } from "../hooks/useSortableData";
 import {
   Wifi,
   Search,
@@ -15,9 +21,9 @@ import {
   Bookmark,
   BookmarkPlus,
   X,
-  Copy
-} from 'lucide-react';
-import { DhcpLease, Subnet } from '@shared';
+  Copy,
+} from "lucide-react";
+import { DhcpLease, Subnet } from "@shared";
 
 export interface LeasesProps {
   setNotification?: (notif: NotificationState) => void;
@@ -28,53 +34,61 @@ interface ExtendedLease extends DhcpLease {
 }
 
 const formatDateTime = (dateStr?: string | null): string => {
-  if (!dateStr) return '—';
+  if (!dateStr) return "—";
   try {
     const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return '—';
-    const pad = (n: number) => String(n).padStart(2, '0');
+    if (isNaN(d.getTime())) return "—";
+    const pad = (n: number) => String(n).padStart(2, "0");
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
   } catch {
-    return '—';
+    return "—";
   }
 };
 
 const STATUS_TABS = [
-  { id: 'all', label: 'All' },
-  { id: 'active', label: 'Active' },
-  { id: 'reserved', label: 'Reserved' },
-  { id: 'expired', label: 'Expired' },
-  { id: 'declined', label: 'Declined' }
+  { id: "all", label: "All" },
+  { id: "active", label: "Active" },
+  { id: "reserved", label: "Reserved" },
+  { id: "expired", label: "Expired" },
+  { id: "declined", label: "Declined" },
 ];
 
 const SORT_COLUMNS: ColumnsConfig<ExtendedLease> = {
-  ip: { get: (l) => l.ip, type: 'ip' },
-  mac: { get: (l) => l.mac, type: 'string' },
-  hostname: { get: (l) => l.hostname || '', type: 'string' },
-  status: { get: (l) => l.status, type: 'string' },
-  starts: { get: (l) => l.starts || '', type: 'date' },
-  ends: { get: (l) => l.ends || '', type: 'date' }
+  ip: { get: (l) => l.ip, type: "ip" },
+  mac: { get: (l) => l.mac, type: "string" },
+  hostname: { get: (l) => l.hostname || "", type: "string" },
+  status: { get: (l) => l.status, type: "string" },
+  starts: { get: (l) => l.starts || "", type: "date" },
+  ends: { get: (l) => l.ends || "", type: "date" },
 };
 
 export function Leases({ setNotification }: LeasesProps) {
   const { apiFetch } = useAuth();
   const [leases, setLeases] = useState<ExtendedLease[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = usePersistedState<string>('leases.search', '');
-  const [statusFilter, setStatusFilter] = usePersistedState<string>('leases.status', 'all');
+  const [search, setSearch] = usePersistedState<string>("leases.search", "");
+  const [statusFilter, setStatusFilter] = usePersistedState<string>(
+    "leases.status",
+    "all",
+  );
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = usePersistedState<number>('leases.pageSize', 25);
+  const [pageSize, setPageSize] = usePersistedState<number>(
+    "leases.pageSize",
+    25,
+  );
 
   // Release state
   const [releaseTarget, setReleaseTarget] = useState<string | null>(null);
   const [releasing, setReleasing] = useState(false);
 
   // Convert to Reserve state & Modal
-  const [reserveTarget, setReserveTarget] = useState<ExtendedLease | null>(null);
-  const [reserveHostname, setReserveHostname] = useState('');
-  const [reserveSubnetId, setReserveSubnetId] = useState('');
+  const [reserveTarget, setReserveTarget] = useState<ExtendedLease | null>(
+    null,
+  );
+  const [reserveHostname, setReserveHostname] = useState("");
+  const [reserveSubnetId, setReserveSubnetId] = useState("");
   const [scopes, setScopes] = useState<Subnet[]>([]);
   const [reserving, setReserving] = useState(false);
 
@@ -82,21 +96,24 @@ export function Leases({ setNotification }: LeasesProps) {
     try {
       setLoading(true);
       const query = new URLSearchParams();
-      if (statusFilter !== 'all') query.append('status', statusFilter);
-      if (search) query.append('search', search);
+      if (statusFilter !== "all") query.append("status", statusFilter);
+      if (search) query.append("search", search);
 
       const res = await apiFetch(`/api/leases?${query.toString()}`);
       const data = await res.json();
       // Conflicting leases are shown as normal active leases
       setLeases(
         (data.leases || []).map((l: ExtendedLease) =>
-          l.status === 'conflict' ? { ...l, status: 'active', isConflict: false } : l
-        )
+          l.status === "conflict"
+            ? { ...l, status: "active", isConflict: false }
+            : l,
+        ),
       );
     } catch (err: unknown) {
       if (setNotification) {
-        const msg = err instanceof Error ? err.message : 'Error fetching leases';
-        setNotification({ type: 'error', message: msg });
+        const msg =
+          err instanceof Error ? err.message : "Error fetching leases";
+        setNotification({ type: "error", message: msg });
       }
     } finally {
       setLoading(false);
@@ -105,7 +122,7 @@ export function Leases({ setNotification }: LeasesProps) {
 
   const fetchScopes = async () => {
     try {
-      const res = await apiFetch('/api/scopes');
+      const res = await apiFetch("/api/scopes");
       const data = await res.json();
       setScopes(Array.isArray(data) ? data : []);
     } catch {
@@ -128,17 +145,21 @@ export function Leases({ setNotification }: LeasesProps) {
     fetchLeases();
   };
 
-  const { sorted: sortedLeases, sort, toggleSort } = useSortableData(leases, SORT_COLUMNS);
+  const {
+    sorted: sortedLeases,
+    sort,
+    toggleSort,
+  } = useSortableData(leases, SORT_COLUMNS);
 
   const paginatedLeases = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
     return sortedLeases.slice(start, start + pageSize);
   }, [sortedLeases, currentPage, pageSize]);
 
-  const isFiltering = statusFilter !== 'all' || Boolean(search);
+  const isFiltering = statusFilter !== "all" || Boolean(search);
   const clearFilters = () => {
-    setStatusFilter('all');
-    setSearch('');
+    setStatusFilter("all");
+    setSearch("");
     setCurrentPage(1);
   };
 
@@ -148,17 +169,18 @@ export function Leases({ setNotification }: LeasesProps) {
     try {
       setReleasing(true);
       const res = await apiFetch(`/api/leases/${releaseTarget}/release`, {
-        method: 'POST',
+        method: "POST",
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
 
-      if (setNotification) setNotification({ type: 'success', message: data.message });
+      if (setNotification)
+        setNotification({ type: "success", message: data.message });
       fetchLeases();
     } catch (err: unknown) {
       if (setNotification) {
-        const msg = err instanceof Error ? err.message : 'Release failed';
-        setNotification({ type: 'error', message: msg });
+        const msg = err instanceof Error ? err.message : "Release failed";
+        setNotification({ type: "error", message: msg });
       }
     } finally {
       setReleasing(false);
@@ -169,8 +191,8 @@ export function Leases({ setNotification }: LeasesProps) {
   // Open Convert to Reserve modal
   const openReserveModal = (lease: ExtendedLease) => {
     setReserveTarget(lease);
-    setReserveHostname(lease.hostname || '');
-    setReserveSubnetId(String(lease.subnetId || ''));
+    setReserveHostname(lease.hostname || "");
+    setReserveSubnetId(String(lease.subnetId || ""));
   };
 
   // Confirm Convert to Reserve
@@ -181,22 +203,25 @@ export function Leases({ setNotification }: LeasesProps) {
     try {
       setReserving(true);
       const res = await apiFetch(`/api/leases/${reserveTarget.ip}/reserve`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           mac: reserveTarget.mac,
           hostname: reserveHostname.trim(),
-          subnetId: reserveSubnetId
-        })
+          subnetId: reserveSubnetId,
+        }),
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to create reservation');
+      if (!res.ok)
+        throw new Error(data.error || "Failed to create reservation");
 
       if (setNotification) {
         setNotification({
-          type: 'success',
-          message: data.message || `IP ${reserveTarget.ip} converted to static reservation successfully!`
+          type: "success",
+          message:
+            data.message ||
+            `IP ${reserveTarget.ip} converted to static reservation successfully!`,
         });
       }
 
@@ -204,8 +229,8 @@ export function Leases({ setNotification }: LeasesProps) {
       fetchLeases();
     } catch (err: unknown) {
       if (setNotification) {
-        const msg = err instanceof Error ? err.message : 'Reservation failed';
-        setNotification({ type: 'error', message: msg });
+        const msg = err instanceof Error ? err.message : "Reservation failed";
+        setNotification({ type: "error", message: msg });
       }
     } finally {
       setReserving(false);
@@ -215,37 +240,52 @@ export function Leases({ setNotification }: LeasesProps) {
   const exportCSV = () => {
     if (leases.length === 0) return;
 
-    const headers = ['IP Address', 'MAC Address', 'Hostname', 'Status', 'Lease Start', 'End Lease'];
-    const rows = leases.map(l => [
+    const headers = [
+      "IP Address",
+      "MAC Address",
+      "Hostname",
+      "Status",
+      "Lease Start",
+      "End Lease",
+    ];
+    const rows = leases.map((l) => [
       l.ip,
-      l.mac || '',
-      `"${l.hostname || ''}"`,
+      l.mac || "",
+      `"${l.hostname || ""}"`,
       l.status,
       formatDateTime(l.starts),
-      l.isReserved ? 'Never (Reserved)' : formatDateTime(l.ends)
+      l.isReserved ? "Never (Reserved)" : formatDateTime(l.ends),
     ]);
 
-    const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const csvContent =
+      "data:text/csv;charset=utf-8,\uFEFF" +
+      [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
     const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `dhcp_leases_${new Date().toISOString().slice(0, 10)}.csv`);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute(
+      "download",
+      `dhcp_leases_${new Date().toISOString().slice(0, 10)}.csv`,
+    );
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
   const renderStatusBadge = (lease: ExtendedLease) => {
-    const st = lease.status || 'active';
-    if (st === 'reserved' || lease.isReserved) {
+    const st = lease.status || "active";
+    if (st === "reserved" || lease.isReserved) {
       return (
-        <span className="badge badge-purple" title="Static Host Reservation (Strict Match)">
+        <span
+          className="badge badge-purple"
+          title="Static Host Reservation (Strict Match)"
+        >
           <Bookmark size={11} className="shrink-0" />
           <span>Reserved</span>
         </span>
       );
     }
-    if (st === 'active') {
+    if (st === "active") {
       return (
         <span className="badge badge-active" title="Valid active lease">
           <span className="pulse-dot" />
@@ -253,14 +293,17 @@ export function Leases({ setNotification }: LeasesProps) {
         </span>
       );
     }
-    if (st === 'expired') {
+    if (st === "expired") {
       return (
-        <span className="badge badge-warning" title="Lease duration has expired">
+        <span
+          className="badge badge-warning"
+          title="Lease duration has expired"
+        >
           <span>Expired</span>
         </span>
       );
     }
-    if (st === 'declined') {
+    if (st === "declined") {
       return (
         <span className="badge badge-danger" title="Client declined this IP">
           <span>Declined</span>
@@ -281,7 +324,7 @@ export function Leases({ setNotification }: LeasesProps) {
       {/* Header & Single-row Action Toolbar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white mb-0.5">
+          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white mb-0.5">
             DHCP IP Leases
           </h1>
           <p className="text-slate-500 dark:text-slate-400 text-xs sm:text-sm">
@@ -290,11 +333,20 @@ export function Leases({ setNotification }: LeasesProps) {
         </div>
 
         <div className="flex items-center gap-2 self-start sm:self-auto">
-          <button className="btn btn-secondary text-xs sm:text-sm" onClick={fetchLeases} title="Refresh">
-            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+          <button
+            className="btn btn-secondary text-xs sm:text-sm"
+            onClick={fetchLeases}
+            title="Refresh"
+          >
+            <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
             Refresh
           </button>
-          <button className="btn btn-secondary text-xs sm:text-sm" onClick={exportCSV} disabled={leases.length === 0} title="Export CSV">
+          <button
+            className="btn btn-secondary text-xs sm:text-sm"
+            onClick={exportCSV}
+            disabled={leases.length === 0}
+            title="Export CSV"
+          >
             <Download size={14} />
             CSV
           </button>
@@ -304,7 +356,10 @@ export function Leases({ setNotification }: LeasesProps) {
       {/* Search Bar, Filter Tabs & Counter */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3 flex-1">
-          <form onSubmit={handleSearchSubmit} className="relative flex-1 max-w-xs sm:max-w-sm w-full">
+          <form
+            onSubmit={handleSearchSubmit}
+            className="relative flex-1 max-w-xs sm:max-w-sm w-full"
+          >
             <input
               type="text"
               className="input-text pl-9 pr-8 text-xs sm:text-sm py-2"
@@ -312,12 +367,15 @@ export function Leases({ setNotification }: LeasesProps) {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            <Search
+              size={15}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+            />
             {search && (
               <button
                 type="button"
                 onClick={() => {
-                  setSearch('');
+                  setSearch("");
                   setTimeout(fetchLeases, 0);
                 }}
                 className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-white"
@@ -332,7 +390,7 @@ export function Leases({ setNotification }: LeasesProps) {
               <button
                 key={tab.id}
                 onClick={() => setStatusFilter(tab.id)}
-                className={`segmented-tab-btn ${statusFilter === tab.id ? 'active' : ''}`}
+                className={`segmented-tab-btn ${statusFilter === tab.id ? "active" : ""}`}
               >
                 {tab.label}
               </button>
@@ -341,23 +399,36 @@ export function Leases({ setNotification }: LeasesProps) {
         </div>
 
         <span className="text-xs text-slate-500 dark:text-slate-400 font-medium shrink-0">
-          Showing <strong className="text-slate-800 dark:text-slate-200 font-mono">{sortedLeases.length}</strong> of{' '}
-          <strong className="font-mono">{leases.length}</strong> leases
+          Showing{" "}
+          <strong className="text-slate-800 dark:text-slate-200 font-mono">
+            {sortedLeases.length}
+          </strong>{" "}
+          of <strong className="font-mono">{leases.length}</strong> leases
         </span>
       </div>
 
       {/* Leases Table (fills remaining height) */}
       <div className="glass-card table-card shadow-sm">
         <div className="table-container">
-          <table className={`data-table ${!loading && paginatedLeases.length === 0 ? 'is-empty' : ''}`}>
+          <table
+            className={`data-table ${!loading && paginatedLeases.length === 0 ? "is-empty" : ""}`}
+          >
             <thead>
               <tr>
                 <th className="text-center w-14">No.</th>
                 <SortableTh label="Assigned IP" sortKey="ip" {...sortProps} />
                 <SortableTh label="Hardware MAC" sortKey="mac" {...sortProps} />
-                <SortableTh label="Client Hostname" sortKey="hostname" {...sortProps} />
+                <SortableTh
+                  label="Client Hostname"
+                  sortKey="hostname"
+                  {...sortProps}
+                />
                 <SortableTh label="Status" sortKey="status" {...sortProps} />
-                <SortableTh label="Lease Start" sortKey="starts" {...sortProps} />
+                <SortableTh
+                  label="Lease Start"
+                  sortKey="starts"
+                  {...sortProps}
+                />
                 <SortableTh label="End Lease" sortKey="ends" {...sortProps} />
                 <th className="text-right">Action</th>
               </tr>
@@ -367,7 +438,8 @@ export function Leases({ setNotification }: LeasesProps) {
                 <TableSkeleton rows={8} cols={8} />
               ) : (
                 paginatedLeases.map((l, index) => {
-                  const absoluteIndex = (currentPage - 1) * pageSize + index + 1;
+                  const absoluteIndex =
+                    (currentPage - 1) * pageSize + index + 1;
                   return (
                     <tr key={`${l.ip}-${l.mac}`}>
                       <td className="text-center font-mono text-xs text-slate-400 dark:text-slate-500">
@@ -391,12 +463,18 @@ export function Leases({ setNotification }: LeasesProps) {
                           setNotification={setNotification}
                           className="font-mono text-slate-600 dark:text-slate-400 text-xs sm:text-sm"
                         >
-                          {l.mac || 'N/A'}
+                          {l.mac || "N/A"}
                         </CopyText>
                       </td>
 
                       <td className="font-medium text-slate-800 dark:text-slate-200">
-                        {l.hostname ? l.hostname : <span className="text-slate-400 italic font-normal">—</span>}
+                        {l.hostname ? (
+                          l.hostname
+                        ) : (
+                          <span className="text-slate-400 italic font-normal">
+                            —
+                          </span>
+                        )}
                       </td>
 
                       <td>{renderStatusBadge(l)}</td>
@@ -406,10 +484,14 @@ export function Leases({ setNotification }: LeasesProps) {
                       </td>
 
                       <td className="text-xs font-mono">
-                        {l.isReserved || l.status === 'reserved' ? (
-                          <span className="text-indigo-600 dark:text-indigo-400 font-medium">Never (Reserved)</span>
+                        {l.isReserved || l.status === "reserved" ? (
+                          <span className="text-indigo-600 dark:text-indigo-400 font-medium">
+                            Never (Reserved)
+                          </span>
                         ) : (
-                          <span className="text-slate-600 dark:text-slate-300">{formatDateTime(l.ends)}</span>
+                          <span className="text-slate-600 dark:text-slate-300">
+                            {formatDateTime(l.ends)}
+                          </span>
                         )}
                       </td>
 
@@ -418,33 +500,42 @@ export function Leases({ setNotification }: LeasesProps) {
                         <ActionDropdown
                           items={[
                             !l.isReserved && {
-                              label: 'Convert to Reserve',
+                              label: "Convert to Reserve",
                               icon: BookmarkPlus,
-                              onClick: () => openReserveModal(l)
+                              onClick: () => openReserveModal(l),
                             },
-                            !l.isReserved && l.status === 'active' && {
-                              label: 'Release Lease',
-                              icon: RotateCcw,
-                              danger: true,
-                              onClick: () => setReleaseTarget(l.ip)
-                            },
+                            !l.isReserved &&
+                              l.status === "active" && {
+                                label: "Release Lease",
+                                icon: RotateCcw,
+                                danger: true,
+                                onClick: () => setReleaseTarget(l.ip),
+                              },
                             { separator: true },
                             {
-                              label: 'Copy IP Address',
+                              label: "Copy IP Address",
                               icon: Copy,
                               onClick: () => {
                                 navigator.clipboard.writeText(l.ip);
-                                if (setNotification) setNotification({ type: 'success', message: `Copied ${l.ip}` });
-                              }
+                                if (setNotification)
+                                  setNotification({
+                                    type: "success",
+                                    message: `Copied ${l.ip}`,
+                                  });
+                              },
                             },
                             Boolean(l.mac) && {
-                              label: 'Copy MAC Address',
+                              label: "Copy MAC Address",
                               icon: Copy,
                               onClick: () => {
                                 navigator.clipboard.writeText(l.mac);
-                                if (setNotification) setNotification({ type: 'success', message: `Copied ${l.mac}` });
-                              }
-                            }
+                                if (setNotification)
+                                  setNotification({
+                                    type: "success",
+                                    message: `Copied ${l.mac}`,
+                                  });
+                              },
+                            },
                           ]}
                         />
                       </td>
@@ -457,15 +548,29 @@ export function Leases({ setNotification }: LeasesProps) {
                 <EmptyStateRow
                   colSpan={8}
                   icon={Wifi}
-                  title={isFiltering ? 'No leases match the current filters' : 'No lease records yet'}
-                  hint={isFiltering ? 'Try a different status or search keyword.' : 'Leases appear here as clients obtain IP addresses.'}
+                  title={
+                    isFiltering
+                      ? "No leases match the current filters"
+                      : "No lease records yet"
+                  }
+                  hint={
+                    isFiltering
+                      ? "Try a different status or search keyword."
+                      : "Leases appear here as clients obtain IP addresses."
+                  }
                   actions={
                     isFiltering ? (
-                      <button className="btn btn-secondary text-xs" onClick={clearFilters}>
+                      <button
+                        className="btn btn-secondary text-xs"
+                        onClick={clearFilters}
+                      >
                         Clear filters
                       </button>
                     ) : (
-                      <button className="btn btn-secondary text-xs" onClick={fetchLeases}>
+                      <button
+                        className="btn btn-secondary text-xs"
+                        onClick={fetchLeases}
+                      >
                         <RefreshCw size={13} /> Refresh
                       </button>
                     )
@@ -522,7 +627,8 @@ export function Leases({ setNotification }: LeasesProps) {
             </div>
 
             <p className="text-xs text-slate-600 dark:text-slate-300">
-              Lock this IP address specifically to this client's hardware MAC address so it will always receive the exact same IP.
+              Lock this IP address specifically to this client's hardware MAC
+              address so it will always receive the exact same IP.
             </p>
 
             <form onSubmit={handleConfirmReservation} className="space-y-4">

@@ -12,13 +12,13 @@ python scripts/deploy.py
 ```
 หรือ
 ```bash
-npm run deploy:remote
+pnpm run deploy:remote
 ```
 
 ### สิ่งที่สคริปต์ทำโดยอัตโนมัติ:
 1. เชื่อมต่อไปยังเซิร์ฟเวอร์ปลายทางผ่าน SSH (ดึงข้อมูล Host, User, Password จากไฟล์ `.env` ที่กำหนดค่าตาม `.env.example`)
 2. ซิงค์ไฟล์ซอร์สโค้ดที่มีการแก้ไขไปยัง `/opt/kea-dhcp-ui`
-3. สั่ง Build Client (`npm --prefix client run build`) บนเซิร์ฟเวอร์
+3. สั่งติดตั้งและ Build ด้วย pnpm (`pnpm install --frozen-lockfile && pnpm run build`) บนเซิร์ฟเวอร์
 4. รีสตาร์ท Service (`systemctl restart kea-dhcp-ui.service`)
 5. ตรวจสอบสถานะ Service เป็น `active` และยิงเช็ค API Health check (`http://127.0.0.1:3000/api/health`)
 
