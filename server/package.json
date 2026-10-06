@@ -1,10 +1,11 @@
 {
-  "name": "isc-dhcp-server-api",
+  "name": "kea-dhcp-server-api",
   "version": "1.0.0",
-  "description": "Backend API for ISC DHCP Management UI",
+  "description": "Backend API for Kea DHCP Management UI",
   "main": "index.js",
   "scripts": {
     "build": "tsc",
+    "build:watch": "tsc --watch --preserveWatchOutput",
     "start": "node index.js",
     "dev": "node --watch index.js"
   },

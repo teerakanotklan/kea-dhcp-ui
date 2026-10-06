@@ -27,7 +27,7 @@ export class BackupService {
     if (!fs.existsSync(sourcePath)) return null;
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const filename = `dhcpd.conf.bak_${timestamp}`;
+    const filename = `kea-dhcp4.conf.bak_${timestamp}`;
     const targetPath = path.join(this.backupDir, filename);
 
     fs.copyFileSync(sourcePath, targetPath);

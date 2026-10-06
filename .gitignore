@@ -40,8 +40,10 @@ server/dist
 .env.*
 !.env.example
 
-# Server runtime data (seeded from server/mock on first run)
+# Server runtime data
 server/data/*
+!server/data/kea-dhcp4.conf
+!server/data/users.json
 !server/data/backups/
 server/data/backups/*
 !server/data/backups/.gitkeep

@@ -15,6 +15,6 @@ if (fs.existsSync(nestedEntry)) {
 } else {
   console.error('[Error] Compiled backend not found.');
   console.error(`Checked:\n - ${nestedEntry}\n - ${flatEntry}`);
-  console.error('Please run "pnpm --filter isc-dhcp-server-api run build" before starting the service.');
+  console.error('Please run "pnpm --filter kea-dhcp-server-api run build" before starting the service.');
   process.exit(1);
 }

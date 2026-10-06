@@ -1,5 +1,5 @@
 {
-  "name": "isc-dhcp-client",
+  "name": "kea-dhcp-client",
   "version": "1.0.0",
   "type": "module",
   "scripts": {

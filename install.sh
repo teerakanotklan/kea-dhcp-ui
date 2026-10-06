@@ -539,14 +539,25 @@ USERS_FILE="${DATA_DIR}/users.json"
 if [[ ! -f "$USERS_FILE" ]]; then
     ADMIN_PW="$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-16)"
     ADMIN_PASSWORD="$ADMIN_PW" NODE_ENV=production \
-        runuser -u "$SYSTEM_USER" -- node -e "require('${INSTALL_DIR}/server/services/authService')" >/dev/null
+        runuser -u "$SYSTEM_USER" -- node -e "
+const fs = require('fs');
+const path = require('path');
+const p = [
+  path.join('${INSTALL_DIR}', 'server', 'dist', 'server', 'src', 'services', 'authService.js'),
+  path.join('${INSTALL_DIR}', 'server', 'dist', 'services', 'authService.js'),
+  path.join('${INSTALL_DIR}', 'server', 'services', 'authService.js')
+].find(x => fs.existsSync(x));
+if (p) require(p);
+" >/dev/null
     ADMIN_PASSWORD_MSG="${ADMIN_PW}   <-- shown once, store it now"
     unset ADMIN_PW
 else
     if USERS_FILE="$USERS_FILE" node -e "
-const b=require('${INSTALL_DIR}/server/node_modules/bcryptjs');
-const u=JSON.parse(require('fs').readFileSync(process.env.USERS_FILE,'utf8'));
-process.exit(u.some(x=>b.compareSync('admin123',x.passwordHash))?0:1)" 2>/dev/null; then
+let b;
+try { b = require('${INSTALL_DIR}/server/node_modules/bcryptjs'); }
+catch (e) { b = require('${INSTALL_DIR}/node_modules/bcryptjs'); }
+const u = JSON.parse(require('fs').readFileSync(process.env.USERS_FILE, 'utf8'));
+process.exit(u.some(x => b.compareSync('admin123', x.passwordHash)) ? 0 : 1);" 2>/dev/null; then
         log_warn "An account still uses the default password 'admin123'. Change it in the UI immediately."
     fi
 fi
