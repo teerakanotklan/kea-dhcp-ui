@@ -21,6 +21,9 @@ import scopeRoutes from './routes/scopeRoutes';
 import staticHostRoutes from './routes/staticHostRoutes';
 import leaseRoutes from './routes/leaseRoutes';
 import serviceRoutes from './routes/serviceRoutes';
+import clusterRoutes from './routes/clusterRoutes';
+import keaService from './services/keaService';
+import clusterSyncService from './services/clusterSyncService';
 
 const app = express();
 
@@ -35,6 +38,13 @@ app.use('/api/scopes', scopeRoutes);
 app.use('/api/static-hosts', staticHostRoutes);
 app.use('/api/leases', leaseRoutes);
 app.use('/api/service', serviceRoutes);
+app.use('/api/cluster', clusterRoutes);
+
+// Register auto-sync listener and background monitoring
+keaService.onConfigChange(() => {
+  clusterSyncService.notifyConfigChanged();
+});
+clusterSyncService.startBackgroundSyncLoop();
 
 // Health check
 app.get('/api/health', (_req: Request, res: Response) => {

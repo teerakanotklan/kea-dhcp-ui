@@ -5,3 +5,4 @@ export * from './lease';
 export * from './host';
 export * from './service';
 export * from './logs';
+export * from './cluster';

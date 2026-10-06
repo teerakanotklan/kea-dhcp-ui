@@ -264,9 +264,11 @@ ConditionFileNotEmpty=
 EOF
 systemctl daemon-reload
 
-# 8. Locate Hook Library & Create / Patch Kea Configuration Files
+# 8. Locate Hook Libraries (Lease Commands & High Availability) & Create / Patch Kea Configuration Files
 HOOK_PATH="$(find /usr/lib /usr/lib64 /usr/local/lib -name 'libdhcp_lease_cmds.so' 2>/dev/null | head -n 1 || true)"
+HA_HOOK_PATH="$(find /usr/lib /usr/lib64 /usr/local/lib -name 'libdhcp_ha.so' 2>/dev/null | head -n 1 || true)"
 log_info "Discovered Kea lease hook path: ${HOOK_PATH:-None (Memfile fallback)}"
+log_info "Discovered Kea High Availability hook path: ${HA_HOOK_PATH:-None}"
 
 mkdir -p /etc/kea/backups
 mkdir -p /var/lib/kea
@@ -420,7 +422,7 @@ fi
 cat << EOF > "$AGENT_CONF"
 {
   "Control-agent": {
-    "http-host": "127.0.0.1",
+    "http-host": "0.0.0.0",
     "http-port": 8000,
     "control-sockets": {
       "dhcp4": {
@@ -491,6 +493,9 @@ log_success "Kea DHCP Server and Control Agent services are active."
 log_info "Installing project dependencies and building React frontend via pnpm..."
 
 cd "$INSTALL_DIR"
+find client/src -name '*.jsx' -delete 2>/dev/null || true
+find client/src -name '*.js' -delete 2>/dev/null || true
+rm -rf client/dist client/node_modules/.vite
 pnpm install --frozen-lockfile
 pnpm run build
 

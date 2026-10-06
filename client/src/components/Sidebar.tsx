@@ -7,6 +7,7 @@ import {
   Terminal,
   Activity,
   Settings,
+  Layers,
   X
 } from 'lucide-react';
 
@@ -37,6 +38,12 @@ export function Sidebar({ isOpen, onClose, isCollapsed }: SidebarProps) {
       label: 'Leases',
       icon: Wifi,
       isActive: (pathname: string) => pathname.startsWith('/leases')
+    },
+    {
+      to: '/cluster',
+      label: 'Cluster',
+      icon: Layers,
+      isActive: (pathname: string) => pathname.startsWith('/cluster')
     },
     {
       to: '/logs',

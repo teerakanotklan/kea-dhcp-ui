@@ -8,10 +8,15 @@ import { KeaDhcp4Config, KeaAgentResponse, KeaRawLease } from '../types/kea';
 export class KeaService {
   private agentUrl: string;
   private confPath: string;
+  private configChangeListeners: Array<() => void> = [];
 
   constructor() {
     this.agentUrl = config.keaCtrlAgentUrl;
     this.confPath = config.confPath;
+  }
+
+  onConfigChange(callback: () => void): void {
+    this.configChangeListeners.push(callback);
   }
 
   /**
@@ -139,7 +144,11 @@ export class KeaService {
   /**
    * Apply modified Dhcp4 configuration to Kea runtime and persist to disk
    */
-  async setConfig(dhcp4Config: KeaDhcp4Config, comment = 'Updated via Web UI'): Promise<{ success: boolean; appliedViaAgent: boolean; message: string }> {
+  async setConfig(
+    dhcp4Config: KeaDhcp4Config,
+    comment = 'Updated via Web UI',
+    notifyListeners = true
+  ): Promise<{ success: boolean; appliedViaAgent: boolean; message: string }> {
     // 1. Auto backup current configuration on disk
     if (fs.existsSync(this.confPath)) {
       try {
@@ -165,6 +174,16 @@ export class KeaService {
     } catch (agentErr) {
       // Fallback: write to file directly on disk
       this.writeConfigFile(dhcp4Config);
+    }
+
+    if (notifyListeners) {
+      this.configChangeListeners.forEach((fn) => {
+        try {
+          fn();
+        } catch (e) {
+          console.error('[KeaService] Error in config change listener:', e);
+        }
+      });
     }
 
     return {

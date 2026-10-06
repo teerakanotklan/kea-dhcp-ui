@@ -100,7 +100,8 @@ def sync_files(sftp, local_root, remote_root):
         "client/index.html",
         "client/src",
         "shared",
-        "server"
+        "server",
+        "install.sh"
     ]
     
     exclude_subdirs = {"node_modules", "dist", ".git", "__pycache__"}
@@ -160,6 +161,8 @@ def main():
     run_remote_command(ssh, f"chown -R {REMOTE_USER}:{REMOTE_USER} {REMOTE_DIR}", sudo=True)
     run_remote_command(ssh, f"chmod -R 777 {REMOTE_DIR}", sudo=True)
     run_remote_command(ssh, f"rm -rf {REMOTE_DIR}/server/config {REMOTE_DIR}/server/middleware {REMOTE_DIR}/server/routes {REMOTE_DIR}/server/services {REMOTE_DIR}/server/scripts")
+    run_remote_command(ssh, f"find {REMOTE_DIR}/client/src -name '*.jsx' -delete 2>/dev/null; find {REMOTE_DIR}/client/src -name '*.js' -delete 2>/dev/null || true")
+    run_remote_command(ssh, f"rm -rf {REMOTE_DIR}/client/dist {REMOTE_DIR}/client/node_modules/.vite")
     run_remote_command(ssh, f"rm -f {REMOTE_DIR}/package-lock.json {REMOTE_DIR}/client/package-lock.json {REMOTE_DIR}/server/package-lock.json")
     # Clean legacy npm-installed node_modules if present
     run_remote_command(ssh, f"test ! -f {REMOTE_DIR}/pnpm-lock.yaml && rm -rf {REMOTE_DIR}/node_modules {REMOTE_DIR}/client/node_modules {REMOTE_DIR}/server/node_modules || true", sudo=True)
