@@ -2,9 +2,11 @@ import express, { Request, Response } from 'express';
 import authMiddleware from '../middleware/auth';
 import clusterService from '../services/clusterService';
 import clusterSyncService from '../services/clusterSyncService';
+import authService from '../services/authService';
 import { ClusterNodeSchema, ClusterSettingsSchema } from '../../../shared/types/cluster';
 
 const router = express.Router();
+
 
 /**
  * GET /api/cluster/overview
@@ -40,7 +42,7 @@ router.get('/nodes', authMiddleware, (_req: Request, res: Response) => {
 
 /**
  * POST /api/cluster/nodes
- * Add a new node to the cluster
+ * Add a new node to the cluster with automatic peer pairing
  */
 router.post('/nodes', authMiddleware, async (req: Request, res: Response) => {
   try {
@@ -49,13 +51,54 @@ router.post('/nodes', authMiddleware, async (req: Request, res: Response) => {
       return res.status(400).json({ error: parsed.error.errors[0]?.message || 'Invalid node data' });
     }
 
-    const created = await clusterService.addNode(parsed.data);
+    const { adminPassword } = req.body || {};
+    const created = await clusterService.addNode(parsed.data, adminPassword);
     return res.status(201).json(created);
   } catch (err: unknown) {
     const errMsg = err instanceof Error ? err.message : String(err);
     return res.status(400).json({ error: errMsg });
   }
 });
+
+/**
+ * POST /api/cluster/pair
+ * Receive cluster pairing request from peer node, adopting cluster settings and auto-switching local role
+ */
+router.post('/pair', async (req: Request, res: Response) => {
+  try {
+    const secretHeader = (req.headers['x-cluster-secret'] || '') as string;
+    const currentSettings = clusterService.getSettings();
+    const { adminPassword, clusterSecret } = req.body || {};
+
+    const isUnclustered = !currentSettings.enabled;
+    const secretMatch = Boolean(secretHeader && secretHeader === currentSettings.clusterSecret);
+    const initialMatch = Boolean(clusterSecret && clusterSecret === currentSettings.clusterSecret);
+    let passwordMatch = false;
+
+    if (adminPassword) {
+      try {
+        const authRes = authService.authenticate('admin', adminPassword);
+        passwordMatch = Boolean(authRes && authRes.success);
+      } catch {
+        passwordMatch = false;
+      }
+    }
+
+
+    if (!isUnclustered && !secretMatch && !initialMatch && !passwordMatch) {
+      return res.status(401).json({
+        error: 'Unauthorized: Cluster pairing requires matching cluster secret or valid admin credentials'
+      });
+    }
+
+    const result = await clusterService.pairWithCluster(req.body);
+    return res.json(result);
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    return res.status(500).json({ error: errMsg });
+  }
+});
+
 
 /**
  * PUT /api/cluster/nodes/:id
