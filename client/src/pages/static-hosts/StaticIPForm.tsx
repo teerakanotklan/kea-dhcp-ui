@@ -232,7 +232,7 @@ export function StaticIPForm({ setNotification }: StaticIPFormProps) {
               required
             />
             <span className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
-              Unique hostname declaration inside dhcpd.conf
+              Unique hostname declaration inside kea-dhcp4.conf
             </span>
           </div>
 

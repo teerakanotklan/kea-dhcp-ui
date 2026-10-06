@@ -6,12 +6,11 @@
   "packageManager": "pnpm@10.33.0",
   "scripts": {
     "start": "node server/index.js",
-    "dev:server": "node --watch server/index.js",
-    "dev:client": "pnpm --filter isc-dhcp-client dev",
-    "dev": "concurrently \"pnpm run dev:server\" \"pnpm run dev:client\"",
-    "build": "pnpm --filter isc-dhcp-server-api run build && pnpm --filter isc-dhcp-client run build",
-    "typecheck": "pnpm --filter isc-dhcp-server-api run build && pnpm --filter isc-dhcp-client run build",
-    "deploy:remote": "python scripts/deploy.py",
+    "dev:server": "concurrently -k -p \"[{name}]\" -n \"TSC,SRV\" -c \"blue,green\" \"pnpm --filter kea-dhcp-server-api run build:watch\" \"node --watch server/index.js\"",
+    "dev:client": "pnpm --filter kea-dhcp-client dev",
+    "dev": "concurrently -k -p \"[{name}]\" -n \"SRV,CLI\" -c \"magenta,cyan\" \"pnpm run dev:server\" \"pnpm run dev:client\"",
+    "build": "pnpm --filter kea-dhcp-server-api run build && pnpm --filter kea-dhcp-client run build",
+    "typecheck": "pnpm --filter kea-dhcp-server-api run build && pnpm --filter kea-dhcp-client run build",
     "install:all": "pnpm install"
   },
   "devDependencies": {

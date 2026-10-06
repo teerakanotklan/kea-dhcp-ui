@@ -1,25 +1,18 @@
 # Project Guidelines & Rules
 
-## Mandatory Deployment & Remote Verification Rule
+## Production Verification & Code Quality Standards
 
 > [!IMPORTANT]
-> **ทุกๆ การแก้ไขโค้ด (ทั้งฝั่ง Client หรือ Server)** จะต้องทำการทดสอบและ Deploy ไปยังเครื่องเซิร์ฟเวอร์ทดสอบ **192.168.153.8** ทุกครั้งก่อนสรุปงาน
+> **Every code change (both Client and Server)** must pass verification before concluding work:
+> 1. Run typecheck and build for the entire project:
+>    ```bash
+>    pnpm run build
+>    ```
+> 2. Ensure there are no TypeScript errors or build warnings remaining.
+> 3. Maintain a clean project structure with no temporary or test scripts left in the production repository.
 
-### ขั้นตอนการรัน Deploy และ Verification:
-ทุกครั้งที่มีการแก้ไขโค้ด ให้รันคำสั่ง:
-```bash
-python scripts/deploy.py
-```
-หรือ
-```bash
-pnpm run deploy:remote
-```
-
-### สิ่งที่สคริปต์ทำโดยอัตโนมัติ:
-1. เชื่อมต่อไปยังเซิร์ฟเวอร์ปลายทางผ่าน SSH (ดึงข้อมูล Host, User, Password จากไฟล์ `.env` ที่กำหนดค่าตาม `.env.example`)
-2. ซิงค์ไฟล์ซอร์สโค้ดที่มีการแก้ไขไปยัง `/opt/kea-dhcp-ui`
-3. สั่งติดตั้งและ Build ด้วย pnpm (`pnpm install --frozen-lockfile && pnpm run build`) บนเซิร์ฟเวอร์
-4. รีสตาร์ท Service (`systemctl restart kea-dhcp-ui.service`)
-5. ตรวจสอบสถานะ Service เป็น `active` และยิงเช็ค API Health check (`http://127.0.0.1:3000/api/health`)
-
-เมื่อผลการรันผ่านครบทุกขั้นตอน จึงจะถือว่าการแก้ไขงานเสร็จสมบูรณ์
+### Architecture & Conventions:
+- **Backend**: Express on Node.js (TypeScript) compiled to `server/dist`, executed via `server/index.js`.
+- **Frontend**: React (Vite + TypeScript + Tailwind CSS) compiled to `client/dist`.
+- **Single-port Production**: Express backend serves the static frontend from `client/dist` in production mode.
+- **Installer**: `install.sh` automated installation script for Linux servers (Debian/Ubuntu/RHEL/AlmaLinux/Rocky).
