@@ -510,10 +510,38 @@ export class ClusterService {
   /**
    * Trigger Kea HA lease sync from partner
    */
-  async triggerKeaHaSync(): Promise<{ success: boolean; message: string }> {
+  async triggerKeaHaSync(targetServerName?: string): Promise<{ success: boolean; message: string }> {
     try {
-      await keaService.sendCommand('ha-sync', ['dhcp4'], { max_pages: 10 });
-      return { success: true, message: 'Kea HA sync command initiated successfully' };
+      let partnerServerName = targetServerName?.trim();
+      if (!partnerServerName) {
+        // Automatically determine partner node
+        const localNode = this.getLocalNode();
+        let partnerNode = this.data.nodes.find((n) => !n.isLocal);
+        if (localNode?.role === 'secondary') {
+          // If secondary, prefer syncing from primary
+          const primaryNode = this.data.nodes.find((n) => n.role === 'primary' && !n.isLocal);
+          if (primaryNode) partnerNode = primaryNode;
+        }
+
+        if (!partnerNode) {
+          return {
+            success: false,
+            message: 'Kea HA sync failed: No remote partner node found in cluster configuration'
+          };
+        }
+        partnerServerName = partnerNode.name.replace(/[^a-zA-Z0-9_-]/g, '_');
+      } else {
+        partnerServerName = partnerServerName.replace(/[^a-zA-Z0-9_-]/g, '_');
+      }
+
+      await keaService.sendCommand('ha-sync', ['dhcp4'], {
+        'server-name': partnerServerName,
+        'max-pages': 10
+      });
+      return {
+        success: true,
+        message: `Kea HA sync command initiated successfully from partner server '${partnerServerName}'`
+      };
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       return { success: false, message: `Kea HA sync failed: ${msg}` };

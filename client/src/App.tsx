@@ -14,6 +14,7 @@ import { Leases } from './pages/Leases';
 import { ServiceLogs } from './pages/ServiceLogs';
 import { LogDetail } from './pages/LogDetail';
 import { ClusterDashboard } from './pages/cluster/ClusterDashboard';
+import { ClusterAddPage } from './pages/cluster/ClusterAddPage';
 import { NotFound } from './pages/NotFound';
 import { CheckCircle2, AlertTriangle, X } from 'lucide-react';
 import { NotificationState } from '@shared';
@@ -144,6 +145,7 @@ export function AppContent() {
                       {/* Leases & Logs */}
                       <Route path="/leases" element={<Leases setNotification={triggerNotification} />} />
                       <Route path="/cluster" element={<ClusterDashboard setNotification={triggerNotification} />} />
+                      <Route path="/cluster/add" element={<ClusterAddPage setNotification={triggerNotification} />} />
                       <Route path="/logs" element={<ServiceLogs setNotification={triggerNotification} />} />
                       <Route path="/logs/:id" element={<LogDetail setNotification={triggerNotification} />} />
 

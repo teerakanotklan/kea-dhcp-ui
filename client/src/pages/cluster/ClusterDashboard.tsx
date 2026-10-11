@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import {
   Layers,
@@ -12,6 +13,7 @@ import {
   Network,
   GitCompare,
   ArrowRight,
+  ArrowLeft,
   Shield,
   Activity,
   Radio,
@@ -20,6 +22,13 @@ import {
   Loader2,
   Trash2,
   Edit2,
+  KeyRound,
+  Copy,
+  Check,
+  Eye,
+  EyeOff,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import {
   ClusterOverview,
@@ -28,9 +37,9 @@ import {
   SyncLogEntry,
   ClusterDiffResult,
   NotificationState,
+  ClusterMode,
 } from "@shared";
 import { ClusterHostModal } from "./ClusterHostModal";
-import { ClusterSettingsModal } from "./ClusterSettingsModal";
 import { ClusterDiffModal } from "./ClusterDiffModal";
 import { ConfirmModal } from "../../components/ConfirmModal";
 
@@ -39,6 +48,7 @@ export interface ClusterDashboardProps {
 }
 
 export function ClusterDashboard({ setNotification }: ClusterDashboardProps) {
+  const navigate = useNavigate();
   const { apiFetch } = useAuth();
 
   const [overview, setOverview] = useState<ClusterOverview | null>(null);
@@ -47,12 +57,21 @@ export function ClusterDashboard({ setNotification }: ClusterDashboardProps) {
   const [refreshing, setRefreshing] = useState(false);
   const [syncingAll, setSyncingAll] = useState(false);
   const [triggeringHaSync, setTriggeringHaSync] = useState(false);
+  const [pullingFromPrimary, setPullingFromPrimary] = useState(false);
+
+  // Inline Settings Edit State
+  const [showSettingsPanel, setShowSettingsPanel] = useState(false);
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [panelMode, setPanelMode] = useState<ClusterMode>("failover");
+  const [panelEnabled, setPanelEnabled] = useState(true);
+  const [panelAutoSync, setPanelAutoSync] = useState(true);
+  const [panelSecret, setPanelSecret] = useState("");
+  const [showSecret, setShowSecret] = useState(false);
+  const [secretCopied, setSecretCopied] = useState(false);
 
   // Modals state
   const [hostModalOpen, setHostModalOpen] = useState(false);
   const [editingNode, setEditingNode] = useState<ClusterNode | null>(null);
-
-  const [settingsModalOpen, setSettingsModalOpen] = useState(false);
 
   const [diffModalOpen, setDiffModalOpen] = useState(false);
   const [diffNode, setDiffNode] = useState<ClusterNode | null>(null);
@@ -62,7 +81,7 @@ export function ClusterDashboard({ setNotification }: ClusterDashboardProps) {
   const [deleteTarget, setDeleteTarget] = useState<ClusterNode | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
-  // Testing per-node state
+  // Testing & Syncing per-node state
   const [testingNodeId, setTestingNodeId] = useState<string | null>(null);
   const [syncingNodeId, setSyncingNodeId] = useState<string | null>(null);
 
@@ -77,6 +96,12 @@ export function ClusterDashboard({ setNotification }: ClusterDashboardProps) {
       if (resOverview.ok) {
         const data = await resOverview.json();
         setOverview(data);
+        if (data.settings) {
+          setPanelMode(data.settings.mode || "failover");
+          setPanelEnabled(data.settings.enabled !== false);
+          setPanelAutoSync(data.settings.autoSyncOnSave !== false);
+          setPanelSecret(data.settings.clusterSecret || "");
+        }
       }
       if (resLogs.ok) {
         const logsData = await resLogs.json();
@@ -101,7 +126,6 @@ export function ClusterDashboard({ setNotification }: ClusterDashboardProps) {
   }, []);
 
   const handleTestConnection = async (nodePartial: Partial<ClusterNode>) => {
-    // If it's an existing node with an ID
     if (nodePartial.id) {
       setTestingNodeId(nodePartial.id);
       try {
@@ -125,20 +149,11 @@ export function ClusterDashboard({ setNotification }: ClusterDashboardProps) {
       }
     }
 
-    // Direct endpoint test for new unsaved host
     const res = await apiFetch(`/api/cluster/nodes/test-temp`, {
       method: "POST",
       body: JSON.stringify(nodePartial),
-    }).catch(() => null);
-
-    if (res && res.ok) {
-      return await res.json();
-    }
-
-    return {
-      success: false,
-      message: "Connection test completed",
-    };
+    });
+    return await res.json();
   };
 
   const handleSaveHost = async (nodeData: Partial<ClusterNode>) => {
@@ -149,12 +164,12 @@ export function ClusterDashboard({ setNotification }: ClusterDashboardProps) {
       });
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.error || "Failed to update host");
+        throw new Error(err.error || "Failed to update node");
       }
       if (setNotification) {
         setNotification({
           type: "success",
-          message: "Host updated successfully",
+          message: `Node '${nodeData.name}' updated successfully`,
         });
       }
     } else {
@@ -164,10 +179,13 @@ export function ClusterDashboard({ setNotification }: ClusterDashboardProps) {
       });
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.error || "Failed to add host");
+        throw new Error(err.error || "Failed to add node");
       }
       if (setNotification) {
-        setNotification({ type: "success", message: "Host added to cluster" });
+        setNotification({
+          type: "success",
+          message: `Node '${nodeData.name}' added to cluster`,
+        });
       }
     }
     await fetchOverview();
@@ -182,12 +200,12 @@ export function ClusterDashboard({ setNotification }: ClusterDashboardProps) {
       });
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.error || "Failed to delete host");
+        throw new Error(err.error || "Failed to remove node");
       }
       if (setNotification) {
         setNotification({
           type: "success",
-          message: "Host removed from cluster",
+          message: `Node '${deleteTarget.name}' removed from cluster`,
         });
       }
       setDeleteTarget(null);
@@ -195,7 +213,7 @@ export function ClusterDashboard({ setNotification }: ClusterDashboardProps) {
     } catch (err: unknown) {
       if (setNotification) {
         const msg =
-          err instanceof Error ? err.message : "Failed to delete host";
+          err instanceof Error ? err.message : "Failed to delete node";
         setNotification({ type: "error", message: msg });
       }
     } finally {
@@ -203,22 +221,46 @@ export function ClusterDashboard({ setNotification }: ClusterDashboardProps) {
     }
   };
 
-  const handleSaveSettings = async (settingsData: Partial<ClusterSettings>) => {
-    const res = await apiFetch("/api/cluster/settings", {
-      method: "PUT",
-      body: JSON.stringify(settingsData),
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error || "Failed to save cluster settings");
-    }
-    if (setNotification) {
-      setNotification({
-        type: "success",
-        message: "Cluster settings applied and Kea HA updated",
+  const handleSaveInlineSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingSettings(true);
+    try {
+      const res = await apiFetch("/api/cluster/settings", {
+        method: "PUT",
+        body: JSON.stringify({
+          enabled: panelEnabled,
+          mode: panelMode,
+          clusterSecret: panelSecret.trim(),
+          autoSyncOnSave: panelAutoSync,
+        }),
       });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to save cluster settings");
+      }
+      if (setNotification) {
+        setNotification({
+          type: "success",
+          message: "Cluster HA settings updated successfully",
+        });
+      }
+      await fetchOverview();
+    } catch (err: unknown) {
+      if (setNotification) {
+        const msg =
+          err instanceof Error ? err.message : "Failed to save settings";
+        setNotification({ type: "error", message: msg });
+      }
+    } finally {
+      setSavingSettings(false);
     }
-    await fetchOverview();
+  };
+
+  const handleCopySecret = () => {
+    if (!panelSecret) return;
+    navigator.clipboard.writeText(panelSecret);
+    setSecretCopied(true);
+    setTimeout(() => setSecretCopied(false), 2000);
   };
 
   const handleSyncAll = async () => {
@@ -269,6 +311,35 @@ export function ClusterDashboard({ setNotification }: ClusterDashboardProps) {
       }
     } finally {
       setSyncingNodeId(null);
+    }
+  };
+
+  const handlePullFromPrimary = async (targetNodeId?: string) => {
+    setPullingFromPrimary(true);
+    try {
+      const res = await apiFetch("/api/cluster/sync/pull-from-node", {
+        method: "POST",
+        body: JSON.stringify({ nodeId: targetNodeId }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.success === false) {
+        throw new Error(data.error || data.message || "Failed to pull configuration");
+      }
+      if (setNotification) {
+        setNotification({
+          type: "success",
+          message: data.message || "Synchronized configuration from Primary successfully",
+        });
+      }
+      await fetchOverview();
+    } catch (err: unknown) {
+      if (setNotification) {
+        const msg =
+          err instanceof Error ? err.message : "Failed to pull configuration from Primary";
+        setNotification({ type: "error", message: msg });
+      }
+    } finally {
+      setPullingFromPrimary(false);
     }
   };
 
@@ -324,6 +395,19 @@ export function ClusterDashboard({ setNotification }: ClusterDashboardProps) {
   const nodes = overview?.nodes || [];
   const summary = overview?.summary;
 
+  // Secondary Node conflict / notification detection
+  const localNode = nodes.find((n) => n.isLocal);
+  const isSecondary = localNode?.role === "secondary";
+  const primaryNode =
+    nodes.find((n) => !n.isLocal && n.role === "primary") ||
+    nodes.find((n) => !n.isLocal);
+
+  const hasSecondaryConfigConflict =
+    isSecondary &&
+    (localNode?.syncStatus === "drift_detected" ||
+      summary?.clusterHealth === "out_of_sync" ||
+      (primaryNode && primaryNode.syncStatus === "drift_detected"));
+
   return (
     <div className="page-wrapper space-y-6 sm:space-y-8">
       {/* Top Header & Actions */}
@@ -373,6 +457,7 @@ export function ClusterDashboard({ setNotification }: ClusterDashboardProps) {
               onClick={handleTriggerKeaHaSync}
               disabled={triggeringHaSync}
               className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-white/10 transition-colors flex items-center gap-1.5"
+              title="Trigger Kea HA ha-sync command to sync leases from partner"
             >
               {triggeringHaSync ? (
                 <Loader2 size={14} className="animate-spin text-cyan-500" />
@@ -399,18 +484,20 @@ export function ClusterDashboard({ setNotification }: ClusterDashboardProps) {
           </button>
 
           <button
-            onClick={() => setSettingsModalOpen(true)}
-            className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-white/10 transition-colors flex items-center gap-1.5"
+            onClick={() => setShowSettingsPanel(!showSettingsPanel)}
+            className={`px-3.5 py-2 rounded-xl text-xs font-semibold border transition-colors flex items-center gap-1.5 ${
+              showSettingsPanel
+                ? "bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white border-slate-300 dark:border-white/20"
+                : "bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-white/10"
+            }`}
           >
             <Settings2 size={14} />
-            Settings
+            HA Policy
+            {showSettingsPanel ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
           </button>
 
           <button
-            onClick={() => {
-              setEditingNode(null);
-              setHostModalOpen(true);
-            }}
+            onClick={() => navigate("/cluster/add")}
             className="px-4 py-2 rounded-xl text-xs font-semibold bg-cyan-600 hover:bg-cyan-500 text-white shadow-lg shadow-cyan-600/20 transition-all flex items-center gap-1.5"
           >
             <Plus size={15} />
@@ -418,6 +505,53 @@ export function ClusterDashboard({ setNotification }: ClusterDashboardProps) {
           </button>
         </div>
       </div>
+
+      {/* Secondary Node Config Conflict / Notification Banner */}
+      {hasSecondaryConfigConflict && (
+        <div className="p-4 sm:p-5 rounded-2xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-fade-in">
+          <div className="flex items-start sm:items-center gap-3.5">
+            <div className="p-2.5 rounded-xl bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 shrink-0">
+              <AlertTriangle size={22} className="animate-pulse" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                  Node Secondary: ตรวจพบการเปลี่ยนแปลงคอนฟิกจาก Node Primary (Hot-Standby / Config Update)
+                </h3>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-200/60 dark:bg-amber-400/20 text-amber-800 dark:text-amber-300">
+                  Action Required
+                </span>
+              </div>
+              <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                โหนดหลัก Primary ({primaryNode?.name || "Primary Node"}) มีการกำหนดค่า Hot-Standby หรือคอนฟิกใหม่ กรุณากดรับค่าเพื่ออัปเดตและซิงค์ให้ตรงกัน
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+            {primaryNode && (
+              <button
+                onClick={() => handleOpenDiff(primaryNode)}
+                className="px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-black/5 dark:hover:bg-white/5 border border-slate-200 dark:border-white/10 transition-colors flex items-center gap-1.5"
+              >
+                <GitCompare size={14} />
+                View Diff
+              </button>
+            )}
+            <button
+              onClick={() => handlePullFromPrimary(primaryNode?.id)}
+              disabled={pullingFromPrimary}
+              className="px-4 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white shadow-md shadow-amber-600/20 transition-all flex items-center gap-2 disabled:opacity-50"
+            >
+              {pullingFromPrimary ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <RefreshCw size={14} />
+              )}
+              ดึงและรับค่า Config จาก Primary
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Cluster Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -498,7 +632,115 @@ export function ClusterDashboard({ setNotification }: ClusterDashboardProps) {
         </div>
       </div>
 
-      {/* Topology & Host Management Section */}
+      {/* Streamlined Cluster HA Policy Panel (Inline, eliminating popup modal) */}
+      {showSettingsPanel && (
+        <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-white/10 shadow-sm space-y-4 animate-fade-in">
+          <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/5 pb-3">
+            <div className="flex items-center gap-2.5">
+              <Settings2 size={18} className="text-indigo-500" />
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                  Cluster High Availability Policy & Shared Security
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  ปรับเปลี่ยนโหมด HA และจัดการคีย์ลับโดยตรงในหน้านี้โดยไม่ต้องเปิดป๊อปอัพ
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowSettingsPanel(false)}
+              className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+            >
+              ซ่อนแผงตั้งค่า
+            </button>
+          </div>
+
+          <form onSubmit={handleSaveInlineSettings} className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+                  Cluster HA Mode
+                </label>
+                <select
+                  value={panelMode}
+                  onChange={(e) => setPanelMode(e.target.value as ClusterMode)}
+                  className="w-full px-3 py-2 text-xs rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-white/10 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                >
+                  <option value="failover">Failover (Hot Standby)</option>
+                  <option value="load-balancing">Load Balancing</option>
+                  <option value="standalone">Standalone (Disabled)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+                  Cluster Secret
+                </label>
+                <div className="relative">
+                  <input
+                    type={showSecret ? "text" : "password"}
+                    value={panelSecret}
+                    onChange={(e) => setPanelSecret(e.target.value)}
+                    className="w-full pl-3 pr-16 py-2 text-xs font-mono rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-white/10 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                    required
+                  />
+                  <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setShowSecret(!showSecret)}
+                      className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                    >
+                      {showSecret ? <EyeOff size={13} /> : <Eye size={13} />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCopySecret}
+                      className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                    >
+                      {secretCopied ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-4 pt-5">
+                <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-slate-700 dark:text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={panelEnabled}
+                    onChange={(e) => setPanelEnabled(e.target.checked)}
+                    className="w-4 h-4 text-cyan-600 rounded border-slate-300 focus:ring-cyan-500"
+                  />
+                  Enable HA
+                </label>
+
+                <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-slate-700 dark:text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={panelAutoSync}
+                    onChange={(e) => setPanelAutoSync(e.target.checked)}
+                    className="w-4 h-4 text-cyan-600 rounded border-slate-300 focus:ring-cyan-500"
+                  />
+                  Auto-sync on Save
+                </label>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="submit"
+                disabled={savingSettings}
+                className="px-4 py-2 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow transition-all flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {savingSettings ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
+                Save HA Policy
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Cluster Server Nodes: Redesigned as Table */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
@@ -520,206 +762,235 @@ export function ClusterDashboard({ setNotification }: ClusterDashboardProps) {
             </span>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {nodes.map((node) => {
-              const isTesting = testingNodeId === node.id;
-              const isSyncing = syncingNodeId === node.id;
+          <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-white/10 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-100 dark:border-white/10 text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider text-[11px] bg-slate-50/60 dark:bg-slate-800/40">
+                    <th className="py-3.5 px-4">Node Name & Role</th>
+                    <th className="py-3.5 px-4">IP Address & Endpoints</th>
+                    <th className="py-3.5 px-4">Health Status</th>
+                    <th className="py-3.5 px-4">Config Sync</th>
+                    <th className="py-3.5 px-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-white/5">
+                  {nodes.map((node) => {
+                    const isTesting = testingNodeId === node.id;
+                    const isSyncing = syncingNodeId === node.id;
 
-              return (
-                <div
-                  key={node.id}
-                  className={`p-5 rounded-2xl bg-white dark:bg-slate-900 border transition-all ${
-                    node.isLocal
-                      ? "border-cyan-500/40 dark:border-cyan-500/30 shadow-md ring-1 ring-cyan-500/20"
-                      : "border-slate-200/80 dark:border-white/10 shadow-sm"
-                  }`}
-                >
-                  {/* Card Header */}
-                  <div className="flex items-start justify-between gap-3 mb-3">
-                    <div className="overflow-hidden">
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-bold text-sm text-slate-900 dark:text-white truncate">
-                          {node.name}
-                        </h3>
-                        {node.isLocal && (
-                          <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-cyan-100 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300">
-                            LOCAL
-                          </span>
-                        )}
-                      </div>
-                      <span className="text-xs font-mono text-slate-500 dark:text-slate-400 block mt-0.5">
-                        {node.host}:{node.uiPort}
-                      </span>
-                    </div>
+                    return (
+                      <tr
+                        key={node.id}
+                        className={`hover:bg-slate-50/50 dark:hover:bg-white/[0.02] transition-colors ${
+                          node.isLocal
+                            ? "bg-cyan-50/20 dark:bg-cyan-900/10"
+                            : ""
+                        }`}
+                      >
+                        {/* Node Name & Role Column */}
+                        <td className="py-3.5 px-4">
+                          <div className="flex items-center gap-2.5">
+                            <div className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                              <Server size={16} />
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-slate-900 dark:text-white">
+                                  {node.name}
+                                </span>
+                                {node.isLocal && (
+                                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-cyan-100 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300">
+                                    LOCAL
+                                  </span>
+                                )}
+                              </div>
+                              <span
+                                className={`inline-block mt-0.5 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                                  node.role === "primary"
+                                    ? "bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300"
+                                    : node.role === "secondary"
+                                      ? "bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300"
+                                      : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400"
+                                }`}
+                              >
+                                {node.role === "secondary" ? "Secondary (Standby)" : node.role}
+                              </span>
+                            </div>
+                          </div>
+                        </td>
 
-                    {/* Role Badge */}
-                    <span
-                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider shrink-0 ${
-                        node.role === "primary"
-                          ? "bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300"
-                          : node.role === "secondary"
-                            ? "bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300"
-                            : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400"
-                      }`}
-                    >
-                      {node.role}
-                    </span>
-                  </div>
-
-                  {/* Status Grid */}
-                  <div className="grid grid-cols-2 gap-2 p-3 rounded-xl bg-slate-50/50 dark:bg-slate-800/40 text-xs mb-4">
-                    <div>
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 uppercase font-semibold block">
-                        Health Status
-                      </span>
-                      <div className="flex items-center gap-1.5 mt-0.5 font-medium">
-                        {node.status === "online" ? (
-                          <>
-                            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                            <span className="text-emerald-600 dark:text-emerald-400">
-                              Online
+                        {/* IP Address & Endpoints Column */}
+                        <td className="py-3.5 px-4">
+                          <div className="space-y-0.5">
+                            <span className="font-mono font-medium text-slate-800 dark:text-slate-200 block">
+                              {node.host}:{node.uiPort}
                             </span>
-                            {node.latencyMs !== undefined && (
-                              <span className="text-[10px] text-slate-400">
-                                ({node.latencyMs}ms)
+                            <span className="text-[11px] font-mono text-slate-400 block truncate max-w-xs" title={node.agentUrl}>
+                              {node.agentUrl || `http://${node.host}:8000`}
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* Health Status Column */}
+                        <td className="py-3.5 px-4">
+                          <div className="flex items-center gap-2">
+                            {node.status === "online" ? (
+                              <>
+                                <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                                <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
+                                  Online
+                                </span>
+                                {node.latencyMs !== undefined && (
+                                  <span className="text-[11px] text-slate-400 font-mono">
+                                    ({node.latencyMs}ms)
+                                  </span>
+                                )}
+                              </>
+                            ) : (
+                              <>
+                                <div className="w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0" />
+                                <span className="text-rose-600 dark:text-rose-400 font-semibold capitalize">
+                                  {node.status || "Offline"}
+                                </span>
+                              </>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Config Sync Column */}
+                        <td className="py-3.5 px-4">
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-1.5 font-medium">
+                              {node.syncStatus === "synced" ? (
+                                <>
+                                  <CheckCircle2
+                                    size={14}
+                                    className="text-emerald-500 shrink-0"
+                                  />
+                                  <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
+                                    Synced
+                                  </span>
+                                </>
+                              ) : node.syncStatus === "drift_detected" ? (
+                                <>
+                                  <AlertTriangle
+                                    size={14}
+                                    className="text-amber-500 shrink-0"
+                                  />
+                                  <span className="text-amber-600 dark:text-amber-400 font-semibold">
+                                    Drift Detected
+                                  </span>
+                                </>
+                              ) : node.syncStatus === "syncing" ? (
+                                <>
+                                  <Loader2
+                                    size={14}
+                                    className="animate-spin text-cyan-500 shrink-0"
+                                  />
+                                  <span className="text-cyan-600 dark:text-cyan-400 font-semibold">
+                                    Syncing...
+                                  </span>
+                                </>
+                              ) : (
+                                <>
+                                  <XCircle
+                                    size={14}
+                                    className="text-slate-400 shrink-0"
+                                  />
+                                  <span className="text-slate-500 capitalize">
+                                    {node.syncStatus || "Pending"}
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                            {node.lastSyncTime && (
+                              <span className="text-[10px] text-slate-400 block">
+                                {new Date(node.lastSyncTime).toLocaleTimeString()}
                               </span>
                             )}
-                          </>
-                        ) : (
-                          <>
-                            <div className="w-2 h-2 rounded-full bg-rose-500" />
-                            <span className="text-rose-600 dark:text-rose-400 capitalize">
-                              {node.status || "Offline"}
-                            </span>
-                          </>
-                        )}
-                      </div>
-                    </div>
+                          </div>
+                        </td>
 
-                    <div>
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 uppercase font-semibold block">
-                        Config Sync
-                      </span>
-                      <div className="flex items-center gap-1.5 mt-0.5 font-medium">
-                        {node.syncStatus === "synced" ? (
-                          <>
-                            <CheckCircle2
-                              size={13}
-                              className="text-emerald-500 shrink-0"
-                            />
-                            <span className="text-emerald-600 dark:text-emerald-400">
-                              Synced
-                            </span>
-                          </>
-                        ) : node.syncStatus === "drift_detected" ? (
-                          <>
-                            <AlertTriangle
-                              size={13}
-                              className="text-amber-500 shrink-0"
-                            />
-                            <span className="text-amber-600 dark:text-amber-400">
-                              Drift
-                            </span>
-                          </>
-                        ) : node.syncStatus === "syncing" ? (
-                          <>
-                            <Loader2
-                              size={13}
-                              className="animate-spin text-cyan-500 shrink-0"
-                            />
-                            <span className="text-cyan-600 dark:text-cyan-400">
-                              Syncing...
-                            </span>
-                          </>
-                        ) : (
-                          <>
-                            <XCircle
-                              size={13}
-                              className="text-slate-400 shrink-0"
-                            />
-                            <span className="text-slate-500 capitalize">
-                              {node.syncStatus || "Pending"}
-                            </span>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </div>
+                        {/* Actions Column */}
+                        <td className="py-3.5 px-4 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => handleTestConnection(node)}
+                              disabled={isTesting}
+                              className="p-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-cyan-600 dark:hover:text-cyan-400 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
+                              title="Test Node Ping & Agent"
+                            >
+                              {isTesting ? (
+                                <Loader2 size={14} className="animate-spin text-cyan-500" />
+                              ) : (
+                                <Network size={14} />
+                              )}
+                            </button>
 
-                  {/* Actions Bar */}
-                  <div className="flex items-center justify-between gap-1 pt-1 border-t border-slate-100 dark:border-white/5">
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => handleTestConnection(node)}
-                        disabled={isTesting}
-                        className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5 transition-colors text-xs flex items-center gap-1"
-                        title="Test Connection"
-                      >
-                        {isTesting ? (
-                          <Loader2
-                            size={14}
-                            className="animate-spin text-cyan-500"
-                          />
-                        ) : (
-                          <Network size={14} />
-                        )}
-                        <span className="text-[11px]">Ping</span>
-                      </button>
+                            {!node.isLocal && (
+                              <>
+                                <button
+                                  onClick={() => handleOpenDiff(node)}
+                                  className="p-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
+                                  title="Compare Differences (Diff)"
+                                >
+                                  <GitCompare size={14} />
+                                </button>
 
-                      {!node.isLocal && (
-                        <>
-                          <button
-                            onClick={() => handleOpenDiff(node)}
-                            className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5 transition-colors text-xs flex items-center gap-1"
-                            title="Compare Config Diff"
-                          >
-                            <GitCompare size={14} />
-                            <span className="text-[11px]">Diff</span>
-                          </button>
+                                <button
+                                  onClick={() => {
+                                    if (isSecondary && node.role === "primary") {
+                                      handlePullFromPrimary(node.id);
+                                    } else {
+                                      handleSyncNode(node);
+                                    }
+                                  }}
+                                  disabled={isSyncing || pullingFromPrimary}
+                                  className="p-1.5 rounded-lg text-cyan-600 dark:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-500/10 transition-colors"
+                                  title={
+                                    isSecondary && node.role === "primary"
+                                      ? "Pull Config from Primary"
+                                      : "Push Config to this node"
+                                  }
+                                >
+                                  {isSyncing || (pullingFromPrimary && node.role === "primary") ? (
+                                    <Loader2 size={14} className="animate-spin" />
+                                  ) : isSecondary && node.role === "primary" ? (
+                                    <ArrowLeft size={14} />
+                                  ) : (
+                                    <ArrowRight size={14} />
+                                  )}
+                                </button>
 
-                          <button
-                            onClick={() => handleSyncNode(node)}
-                            disabled={isSyncing}
-                            className="p-1.5 rounded-lg text-cyan-600 dark:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-500/10 transition-colors text-xs flex items-center gap-1"
-                            title="Push Config to this node"
-                          >
-                            {isSyncing ? (
-                              <Loader2 size={14} className="animate-spin" />
-                            ) : (
-                              <ArrowRight size={14} />
+                                <button
+                                  onClick={() => {
+                                    setEditingNode(node);
+                                    setHostModalOpen(true);
+                                  }}
+                                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
+                                  title="Edit Node"
+                                >
+                                  <Edit2 size={14} />
+                                </button>
+
+                                <button
+                                  onClick={() => setDeleteTarget(node)}
+                                  className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors"
+                                  title="Remove Node"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </>
                             )}
-                            <span className="text-[11px]">Sync</span>
-                          </button>
-                        </>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => {
-                          setEditingNode(node);
-                          setHostModalOpen(true);
-                        }}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
-                        title="Edit Node"
-                      >
-                        <Edit2 size={14} />
-                      </button>
-
-                      {!node.isLocal && (
-                        <button
-                          onClick={() => setDeleteTarget(node)}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors"
-                          title="Delete Node"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>
@@ -789,21 +1060,13 @@ export function ClusterDashboard({ setNotification }: ClusterDashboardProps) {
         )}
       </div>
 
-      {/* Host Modal */}
+      {/* Edit Host Modal (Used when clicking Edit action on an existing node) */}
       <ClusterHostModal
         isOpen={hostModalOpen}
         onClose={() => setHostModalOpen(false)}
         onSave={handleSaveHost}
         node={editingNode}
         onTestConnection={handleTestConnection}
-      />
-
-      {/* Settings Modal */}
-      <ClusterSettingsModal
-        isOpen={settingsModalOpen}
-        onClose={() => setSettingsModalOpen(false)}
-        settings={settings || null}
-        onSave={handleSaveSettings}
       />
 
       {/* Diff Modal */}

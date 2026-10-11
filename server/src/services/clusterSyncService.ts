@@ -6,6 +6,7 @@ import backupService from './backupService';
 import config from '../config/default';
 import {
   ClusterNode,
+  ClusterSettings,
   ClusterSyncPayload,
   ClusterDiffResult,
   ClusterDiffItem
@@ -49,6 +50,7 @@ export class ClusterSyncService {
     const rawDhcp4 = await keaService.getConfig();
     const checksum = this.computeChecksum(rawDhcp4);
     const parsed = await dhcpConfigService.parseConfig();
+    const currentSettings = clusterService.getSettings();
 
     return {
       version: 1,
@@ -56,6 +58,14 @@ export class ClusterSyncService {
       sourceNodeName: localNode.name,
       timestamp: new Date().toISOString(),
       checksum,
+      clusterSettings: {
+        mode: currentSettings.mode,
+        autoFailover: currentSettings.autoFailover,
+        enabled: currentSettings.enabled,
+        heartbeatDelayMs: currentSettings.heartbeatDelayMs,
+        maxResponseDelayMs: currentSettings.maxResponseDelayMs,
+        maxAckDelayMs: currentSettings.maxAckDelayMs
+      },
       config: {
         rawConfig: JSON.stringify({ Dhcp4: rawDhcp4 }, null, 2),
         subnets: parsed.subnets,
@@ -246,6 +256,73 @@ export class ClusterSyncService {
   }
 
   /**
+   * Pull configuration from a remote peer node (e.g. Secondary pulling from Primary)
+   */
+  async pullFromNode(nodeId: string): Promise<{ success: boolean; message: string }> {
+    const node = clusterService.getNodeById(nodeId);
+    if (!node) {
+      throw new Error(`Node with id '${nodeId}' not found`);
+    }
+
+    clusterService.updateNodeStatus(node.id, { syncStatus: 'syncing' });
+
+    try {
+      const settings = clusterService.getSettings();
+      const pullUrl = `http://${node.host}:${node.uiPort}/api/cluster/sync/pull`;
+
+      const res = await fetch(pullUrl, {
+        method: 'GET',
+        headers: {
+          'X-Cluster-Secret': settings.clusterSecret
+        },
+        signal: AbortSignal.timeout(8000)
+      });
+
+      if (!res.ok) {
+        throw new Error(`Remote node responded with HTTP ${res.status}`);
+      }
+
+      const remotePayload = (await res.json()) as ClusterSyncPayload;
+      const receiveResult = await this.receiveSyncPayload(remotePayload, settings.clusterSecret);
+
+      const now = new Date().toISOString();
+      clusterService.updateNodeStatus(node.id, {
+        syncStatus: 'synced',
+        lastSyncTime: now,
+        errorMessage: undefined
+      });
+
+      clusterService.addSyncLog({
+        action: 'pull',
+        targetNodeId: node.id,
+        targetNodeName: node.name,
+        success: true,
+        message: receiveResult.message || `Successfully pulled configuration from ${node.name}`,
+        details: { checksum: remotePayload.checksum }
+      });
+
+      return {
+        success: true,
+        message: receiveResult.message || `Successfully synchronized configuration from ${node.name}`
+      };
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      clusterService.updateNodeStatus(node.id, {
+        syncStatus: 'failed',
+        errorMessage: errorMsg
+      });
+      clusterService.addSyncLog({
+        action: 'pull',
+        targetNodeId: node.id,
+        targetNodeName: node.name,
+        success: false,
+        message: `Pull sync failed: ${errorMsg}`
+      });
+      return { success: false, message: errorMsg };
+    }
+  }
+
+  /**
    * Broadcast configuration to all non-local nodes
    */
   async broadcastSync(action: 'push' | 'auto_sync' = 'push'): Promise<{
@@ -327,6 +404,18 @@ export class ClusterSyncService {
     // 5. Parse configuration
     const parsedPayload = JSON.parse(payload.config.rawConfig);
     const dhcp4 = (parsedPayload.Dhcp4 || parsedPayload) as KeaDhcp4Config;
+
+    // 5.1 Harmonize Cluster Settings (e.g. Mode, Enabled) if provided
+    if (payload.clusterSettings) {
+      const updates: Partial<ClusterSettings> = {};
+      if (payload.clusterSettings.mode) updates.mode = payload.clusterSettings.mode;
+      if (payload.clusterSettings.enabled !== undefined) updates.enabled = payload.clusterSettings.enabled;
+      if (payload.clusterSettings.autoFailover !== undefined) updates.autoFailover = payload.clusterSettings.autoFailover;
+      if (Object.keys(updates).length > 0) {
+        Object.assign(settings, updates);
+        await clusterService.updateSettings(updates);
+      }
+    }
 
     // 6. Preserve and re-align local node's own HA Hook settings if cluster enabled
     if (settings.enabled) {

@@ -51,6 +51,7 @@ export interface ClusterSyncPayload {
   sourceNodeName: string;
   timestamp: string;
   checksum: string;
+  clusterSettings?: Partial<ClusterSettings>;
   config: {
     rawConfig?: string;
     subnets?: unknown[];
