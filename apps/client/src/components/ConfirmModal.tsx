@@ -13,17 +13,17 @@ interface VariantStyle {
 const VARIANTS: Record<ModalVariant, VariantStyle> = {
   danger: {
     icon: Trash2,
-    box: 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20',
+    box: 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 shadow-xs',
     btn: 'btn-danger',
   },
   warning: {
     icon: AlertTriangle,
-    box: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20',
+    box: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 shadow-xs',
     btn: 'btn-warning',
   },
   primary: {
     icon: CheckCircle2,
-    box: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20',
+    box: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 shadow-xs',
     btn: 'btn-primary',
   },
 };
@@ -71,7 +71,6 @@ export function ConfirmModal({
       if (e.key === 'Escape' && !loading) onClose();
     };
     window.addEventListener('keydown', handleKeyDown);
-    // Focus Cancel for destructive actions to avoid accidental confirmation
     const target = resolved === 'danger' ? cancelRef.current : confirmRef.current;
     target?.focus();
     return () => window.removeEventListener('keydown', handleKeyDown);
@@ -79,10 +78,9 @@ export function ConfirmModal({
 
   if (!isOpen) return null;
 
-  // Render the modal using a portal so it sits at the top of the DOM hierarchy
   return createPortal(
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-fadeIn"
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md animate-fadeIn"
       onClick={() => {
         if (!loading) onClose();
       }}
@@ -92,12 +90,12 @@ export function ConfirmModal({
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={descId}
-        className="glass-card max-w-md w-full p-6 shadow-2xl border border-slate-200 dark:border-white/10 space-y-5"
+        className="glass-card max-w-md w-full p-6 sm:p-7 shadow-2xl border border-slate-200/90 dark:border-white/10 space-y-5 rounded-2xl bg-white/95 dark:bg-slate-900/95"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start gap-4">
-          <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${styles.box}`}>
-            <Icon size={20} />
+          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${styles.box}`}>
+            <Icon size={22} />
           </div>
 
           <div className="flex-1 min-w-0">
@@ -111,7 +109,7 @@ export function ConfirmModal({
 
           <button
             type="button"
-            className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:white hover:bg-slate-100 dark:hover:bg-white/10 transition-colors"
+            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 transition-colors"
             onClick={onClose}
             disabled={loading}
             aria-label="Close dialog"
@@ -120,7 +118,7 @@ export function ConfirmModal({
           </button>
         </div>
 
-        <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-200/80 dark:border-white/10">
+        <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-200/80 dark:border-white/[0.08]">
           <button
             ref={cancelRef}
             type="button"
@@ -145,3 +143,5 @@ export function ConfirmModal({
     document.body
   );
 }
+
+export default ConfirmModal;

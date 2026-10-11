@@ -105,17 +105,34 @@ export function AppContent() {
 
       {/* Global Notification Toast */}
       {notification && (
-        <div className="fixed bottom-4 right-4 z-50 flex items-center gap-3 px-4 py-3 rounded-xl shadow-2xl border backdrop-blur-md bg-white/95 dark:bg-slate-900/95 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 animate-in slide-in-from-bottom-5">
-          {notification.type === 'success' && <CheckCircle2 className="w-5 h-5 text-emerald-500 flex-shrink-0" />}
-          {notification.type === 'error' && <AlertTriangle className="w-5 h-5 text-rose-500 flex-shrink-0" />}
-          {notification.type === 'warning' && <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0" />}
-          {notification.type === 'info' && <CheckCircle2 className="w-5 h-5 text-blue-500 flex-shrink-0" />}
-          <div className="text-sm font-medium">{notification.message}</div>
+        <div className="fixed bottom-5 right-5 z-50 flex items-center gap-3.5 px-4 py-3 rounded-2xl shadow-2xl border backdrop-blur-xl bg-white/95 dark:bg-slate-900/95 border-slate-200/90 dark:border-white/10 text-slate-900 dark:text-slate-100 animate-fadeIn">
+          {notification.type === 'success' && (
+            <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center shrink-0 border border-emerald-500/20">
+              <CheckCircle2 className="w-4 h-4" />
+            </div>
+          )}
+          {notification.type === 'error' && (
+            <div className="w-8 h-8 rounded-xl bg-rose-500/10 text-rose-500 flex items-center justify-center shrink-0 border border-rose-500/20">
+              <AlertTriangle className="w-4 h-4" />
+            </div>
+          )}
+          {notification.type === 'warning' && (
+            <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center shrink-0 border border-amber-500/20">
+              <AlertTriangle className="w-4 h-4" />
+            </div>
+          )}
+          {notification.type === 'info' && (
+            <div className="w-8 h-8 rounded-xl bg-cyan-500/10 text-cyan-500 flex items-center justify-center shrink-0 border border-cyan-500/20">
+              <CheckCircle2 className="w-4 h-4" />
+            </div>
+          )}
+          <div className="text-xs sm:text-sm font-semibold">{notification.message}</div>
           <button
             onClick={() => setNotification(null)}
-            className="ml-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+            className="ml-2 p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/10 transition-colors"
+            aria-label="Close notification"
           >
-            <X className="w-4 h-4" />
+            <X className="w-3.5 h-3.5" />
           </button>
         </div>
       )}

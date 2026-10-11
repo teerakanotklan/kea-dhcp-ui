@@ -47,12 +47,13 @@ export function ActionDropdown({ items = [], align = 'right' }: ActionDropdownPr
     <div className="relative inline-block text-left" ref={dropdownRef}>
       <button
         type="button"
-        className="btn-icon w-8 h-8 rounded-lg hover:bg-slate-200/70 dark:hover:bg-white/10 transition-colors flex items-center justify-center border border-slate-200/80 dark:border-white/10"
+        className="btn-icon w-8 h-8 rounded-xl hover:bg-slate-200/80 dark:hover:bg-white/10 transition-colors flex items-center justify-center border border-slate-200/80 dark:border-white/10"
         onClick={(e) => {
           e.stopPropagation();
           setOpen(!open);
         }}
         title="Actions"
+        aria-label="Actions"
       >
         <MoreHorizontal size={16} className="text-slate-600 dark:text-slate-300" />
       </button>
@@ -61,7 +62,7 @@ export function ActionDropdown({ items = [], align = 'right' }: ActionDropdownPr
         <div
           className={`absolute ${
             align === 'right' ? 'right-0' : 'left-0'
-          } mt-1.5 w-48 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 shadow-xl py-1 z-50 animate-in fade-in zoom-in-95 backdrop-blur-md`}
+          } mt-2 w-48 rounded-2xl bg-white/95 dark:bg-slate-900/95 border border-slate-200/90 dark:border-white/10 shadow-2xl py-1.5 z-50 animate-fadeIn backdrop-blur-xl`}
           onClick={(e) => e.stopPropagation()}
         >
           {visibleItems.map((item, index) => {
@@ -69,7 +70,7 @@ export function ActionDropdown({ items = [], align = 'right' }: ActionDropdownPr
               return (
                 <div
                   key={`sep-${index}`}
-                  className="my-1 border-t border-slate-100 dark:border-white/5"
+                  className="my-1 border-t border-slate-200/60 dark:border-white/[0.08]"
                 />
               );
             }
@@ -80,10 +81,10 @@ export function ActionDropdown({ items = [], align = 'right' }: ActionDropdownPr
                 key={item.label || index}
                 type="button"
                 disabled={item.disabled}
-                className={`w-full text-left flex items-center gap-2.5 px-3 py-2 text-xs font-medium transition-colors ${
+                className={`w-full text-left flex items-center gap-2.5 px-3 py-2 text-xs font-semibold transition-colors ${
                   item.danger
-                    ? 'text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10'
-                    : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/5'
+                    ? 'text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/15'
+                    : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/[0.08]'
                 } ${item.disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
                 onClick={() => {
                   setOpen(false);
@@ -92,7 +93,7 @@ export function ActionDropdown({ items = [], align = 'right' }: ActionDropdownPr
               >
                 {Icon && (
                   <Icon
-                    size={14}
+                    size={15}
                     className={
                       item.danger
                         ? 'text-rose-500 shrink-0'
@@ -109,3 +110,5 @@ export function ActionDropdown({ items = [], align = 'right' }: ActionDropdownPr
     </div>
   );
 }
+
+export default ActionDropdown;

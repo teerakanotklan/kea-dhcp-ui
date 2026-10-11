@@ -46,7 +46,7 @@ export function Pagination({
   };
 
   return (
-    <div className="shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3 border-t border-slate-200/80 dark:border-white/10 bg-slate-50/50 dark:bg-slate-900/80">
+    <div className="shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3 border-t border-slate-200/80 dark:border-white/[0.08] bg-slate-50/60 dark:bg-slate-900/60 backdrop-blur-md">
       {/* Range and page size */}
       <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400 flex-wrap">
         <span>
@@ -59,7 +59,7 @@ export function Pagination({
           <div className="flex items-center gap-1.5 ml-2">
             <span>Show:</span>
             <select
-              className="select-input py-1 px-2 text-xs w-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/15 rounded"
+              className="select-input py-1 px-2.5 text-xs w-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/15 rounded-lg shadow-xs"
               value={pageSize}
               onChange={(e) => {
                 onPageSizeChange(Number(e.target.value));
@@ -79,18 +79,20 @@ export function Pagination({
       {/* Page navigation buttons */}
       <div className="flex items-center gap-1 self-center sm:self-auto">
         <button
-          className="btn-icon p-1.5 disabled:opacity-30 disabled:cursor-not-allowed"
+          className="btn-icon w-8 h-8 p-0 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed"
           onClick={() => onPageChange(1)}
           disabled={currentPage <= 1}
           title="First Page"
+          aria-label="First Page"
         >
           <ChevronsLeft size={14} />
         </button>
         <button
-          className="btn-icon p-1.5 disabled:opacity-30 disabled:cursor-not-allowed"
+          className="btn-icon w-8 h-8 p-0 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed"
           onClick={() => onPageChange(currentPage - 1)}
           disabled={currentPage <= 1}
           title="Previous Page"
+          aria-label="Previous Page"
         >
           <ChevronLeft size={14} />
         </button>
@@ -103,9 +105,9 @@ export function Pagination({
           ) : (
             <button
               key={p}
-              className={`w-7 h-7 rounded-lg text-xs font-semibold transition-all ${
+              className={`w-8 h-8 rounded-lg text-xs font-bold transition-all duration-150 ${
                 currentPage === p
-                  ? 'bg-indigo-600 text-white shadow-sm'
+                  ? 'bg-gradient-to-r from-indigo-600 to-indigo-500 text-white shadow-xs'
                   : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-white/10'
               }`}
               onClick={() => onPageChange(Number(p))}
@@ -116,18 +118,20 @@ export function Pagination({
         )}
 
         <button
-          className="btn-icon p-1.5 disabled:opacity-30 disabled:cursor-not-allowed"
+          className="btn-icon w-8 h-8 p-0 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed"
           onClick={() => onPageChange(currentPage + 1)}
           disabled={currentPage >= totalPages}
           title="Next Page"
+          aria-label="Next Page"
         >
           <ChevronRight size={14} />
         </button>
         <button
-          className="btn-icon p-1.5 disabled:opacity-30 disabled:cursor-not-allowed"
+          className="btn-icon w-8 h-8 p-0 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed"
           onClick={() => onPageChange(totalPages)}
           disabled={currentPage >= totalPages}
           title="Last Page"
+          aria-label="Last Page"
         >
           <ChevronsRight size={14} />
         </button>
@@ -135,3 +139,5 @@ export function Pagination({
     </div>
   );
 }
+
+export default Pagination;
