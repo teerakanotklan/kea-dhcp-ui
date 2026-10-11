@@ -12,6 +12,8 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 # Dependency directories
 node_modules/
+apps/*/node_modules/
+packages/*/node_modules/
 client/node_modules/
 server/node_modules/
 .pnpm-store/
@@ -19,6 +21,9 @@ server/node_modules/
 # Production build outputs
 dist
 dist-ssr
+apps/client/dist
+apps/server/dist
+packages/shared/dist
 client/dist
 server/dist
 *.local
@@ -41,6 +46,12 @@ server/dist
 !.env.example
 
 # Server runtime data
+apps/server/data/*
+!apps/server/data/kea-dhcp4.conf
+!apps/server/data/users.json
+!apps/server/data/backups/
+apps/server/data/backups/*
+!apps/server/data/backups/.gitkeep
 server/data/*
 !server/data/kea-dhcp4.conf
 !server/data/users.json
@@ -50,4 +61,3 @@ server/data/backups/*
 
 # Temporary scripts & scratch
 scratch/
-

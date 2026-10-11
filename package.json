@@ -5,18 +5,17 @@
   "private": true,
   "packageManager": "pnpm@10.33.0",
   "scripts": {
-    "start": "node server/index.js",
-    "dev:server": "concurrently -k -p \"[{name}]\" -n \"TSC,SRV\" -c \"blue,green\" \"pnpm --filter kea-dhcp-server-api run build:watch\" \"node --watch server/index.js\"",
-    "dev:client": "pnpm --filter kea-dhcp-client dev",
+    "start": "node apps/server/dist/index.js",
+    "dev:shared": "pnpm --filter @kea/shared run build:watch",
+    "dev:server": "concurrently -k -p \"[{name}]\" -n \"SHARED,TSC,SRV\" -c \"yellow,blue,green\" \"pnpm --filter @kea/shared run build:watch\" \"pnpm --filter @kea/server run build:watch\" \"node --watch apps/server/dist/index.js\"",
+    "dev:client": "pnpm --filter @kea/client dev",
     "dev": "concurrently -k -p \"[{name}]\" -n \"SRV,CLI\" -c \"magenta,cyan\" \"pnpm run dev:server\" \"pnpm run dev:client\"",
-    "build": "pnpm --filter kea-dhcp-server-api run build && pnpm --filter kea-dhcp-client run build",
-    "typecheck": "pnpm --filter kea-dhcp-server-api run build && pnpm --filter kea-dhcp-client run build",
+    "build": "pnpm --filter @kea/shared run build && pnpm --filter @kea/server run build && pnpm --filter @kea/client run build",
+    "typecheck": "pnpm --filter @kea/shared run typecheck && pnpm --filter @kea/server run build && pnpm --filter @kea/client run build",
     "install:all": "pnpm install"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2"
-  },
-  "dependencies": {
-    "zod": "^3.24.2"
+    "concurrently": "^8.2.2",
+    "typescript": "^5.4.5"
   }
 }

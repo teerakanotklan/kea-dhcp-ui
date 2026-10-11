@@ -16,8 +16,7 @@ services:
       - KEA_CTRL_AGENT_CONF_PATH=${KEA_CTRL_AGENT_CONF_PATH:-/etc/kea/kea-ctrl-agent.conf}
       - KEA_BACKUP_DIR=${KEA_BACKUP_DIR:-/etc/kea/backups}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
-    volumes:
-      - ./server/data:/app/server/data
+      - ./apps/server/data:/app/apps/server/data
       - /etc/kea:/etc/kea
       - /run/kea:/run/kea
       - /var/lib/kea:/var/lib/kea
