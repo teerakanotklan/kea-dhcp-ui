@@ -51,7 +51,14 @@ router.post('/nodes', authMiddleware, async (req: Request, res: Response) => {
       return res.status(400).json({ error: parsed.error.errors[0]?.message || 'Invalid node data' });
     }
 
-    const { adminPassword } = req.body || {};
+    const { adminPassword, enableHa, clusterMode, clusterSecret } = req.body || {};
+    if (enableHa !== undefined || clusterMode || clusterSecret) {
+      await clusterService.updateSettings({
+        ...(enableHa !== undefined ? { enabled: Boolean(enableHa) } : { enabled: true }),
+        ...(clusterMode ? { mode: clusterMode } : {}),
+        ...(clusterSecret ? { clusterSecret } : {})
+      });
+    }
     const created = await clusterService.addNode(parsed.data, adminPassword);
     return res.status(201).json(created);
   } catch (err: unknown) {
@@ -274,14 +281,45 @@ router.get('/sync/logs', authMiddleware, (_req: Request, res: Response) => {
 });
 
 /**
+ * POST /api/cluster/sync/pull-from-node
+ * Pull configuration from remote peer node (e.g. secondary pulling from primary)
+ */
+router.post('/sync/pull-from-node', authMiddleware, async (req: Request, res: Response) => {
+  const { nodeId } = req.body || {};
+  try {
+    let targetNodeId = nodeId;
+    if (!targetNodeId) {
+      // Auto-select primary node if not specified
+      const primary = clusterService.getNodes().find((n) => !n.isLocal && n.role === 'primary');
+      if (primary) {
+        targetNodeId = primary.id;
+      } else {
+        const firstRemote = clusterService.getNodes().find((n) => !n.isLocal);
+        targetNodeId = firstRemote?.id;
+      }
+    }
+
+    if (!targetNodeId) {
+      return res.status(400).json({ error: 'No remote partner node available to pull configuration from' });
+    }
+
+    const result = await clusterSyncService.pullFromNode(targetNodeId);
+    return res.json(result);
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    return res.status(500).json({ error: errMsg });
+  }
+});
+
+/**
  * POST /api/cluster/ha/action
  * Trigger Kea HA commands (e.g. ha-sync)
  */
 router.post('/ha/action', authMiddleware, async (req: Request, res: Response) => {
-  const { action } = req.body || {};
+  const { action, serverName } = req.body || {};
   try {
     if (action === 'ha-sync') {
-      const result = await clusterService.triggerKeaHaSync();
+      const result = await clusterService.triggerKeaHaSync(serverName);
       return res.json(result);
     }
     return res.status(400).json({ error: `Unknown HA action: ${action}` });
