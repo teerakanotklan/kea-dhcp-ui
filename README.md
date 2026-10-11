@@ -63,6 +63,19 @@ cp .env.example .env
 
 ---
 
+### Operating Modes (Production vs Mockup Simulation)
+
+The system supports two operating modes controlled via the `PRODUCTION` environment variable in `.env`:
+
+| Mode | Parameter | Description |
+| :--- | :--- | :--- |
+| **Production (Default)** | `PRODUCTION=YES` | Connects directly to live Kea DHCP daemons (`kea-dhcp4` and `kea-ctrl-agent`), manages systemd via `sudo systemctl`, reads/writes `/etc/kea/kea-dhcp4.conf`, and queries real leases & system logs. |
+| **Mockup Simulation** | `PRODUCTION=NO` | Runs on simulated mockup data without requiring Kea daemons, systemd, or root permissions. Ideal for local development, UI testing, and demos on macOS/Windows. Displays an amber `Mockup Mode` badge in the UI. |
+
+*Note: If `PRODUCTION` is omitted or left blank in `.env`, the system defaults to **Production mode (`YES`)**.*
+
+---
+
 ### Development Mode (Running with File Watchers)
 
 To run both backend and frontend concurrently in development mode:
@@ -93,9 +106,9 @@ pnpm run dev:server
 
 | Area Modified | Location | Behavior & Required Action |
 | :--- | :--- | :--- |
-| **Frontend UI** | `client/src/**/*` | Vite updates the browser instantly via **Hot Module Replacement (HMR)**. No manual build or restart required. |
-| **Backend API** | `server/src/**/*` | In `pnpm run dev`, TypeScript watcher compiles to `server/dist` and Node auto-restarts. When adding new endpoints or types, verify with `pnpm run build`. |
-| **Shared Types** | `shared/types/**/*` | Shared TypeScript interfaces and Zod schemas used by both frontend and backend. Automatically picked up in `dev` mode. |
+| **Frontend UI** | `apps/client/src/**/*` | Vite updates the browser instantly via **Hot Module Replacement (HMR)**. No manual build or restart required. |
+| **Backend API** | `apps/server/src/**/*` | In `pnpm run dev`, TypeScript watcher compiles to `apps/server/dist` and Node auto-restarts. When adding new endpoints or types, verify with `pnpm run build`. |
+| **Shared Types & Schemas** | `packages/shared/src/**/*` | Shared TypeScript interfaces, DTOs, Kea DHCP configuration structures, and Zod schemas used across the workspace (`@kea/shared`). |
 
 ---
 
@@ -104,13 +117,14 @@ pnpm run dev:server
 Before committing code or deploying to production, run the build verification:
 
 ```bash
-# Build both Backend (server/dist) and Frontend (client/dist)
+# Build Shared Package, Backend (apps/server/dist), and Frontend (apps/client/dist)
 pnpm run build
 ```
 
 This performs:
-1. **Backend**: Runs `tsc` to compile TypeScript in `server/src` into `server/dist/`.
-2. **Frontend**: Runs `tsc` (typecheck) followed by `vite build` into `client/dist/`.
+1. **Shared Package (`@kea/shared`)**: Runs `tsc` to compile definitions and schemas into `packages/shared/dist/`.
+2. **Backend (`@kea/server`)**: Runs `tsc` to compile TypeScript in `apps/server/src` into `apps/server/dist/`.
+3. **Frontend (`@kea/client`)**: Runs `tsc` (typecheck) followed by `vite build` into `apps/client/dist/`.
 
 #### Typecheck Command
 ```bash
@@ -126,7 +140,7 @@ Ensure that:
 
 ### Testing Single-Port Production Locally
 
-In production, the Express backend serves both the REST API endpoints and the static compiled frontend bundle from `client/dist` on a single port (default: `3000`):
+In production, the Express backend serves both the REST API endpoints and the static compiled frontend bundle from `apps/client/dist` on a single port (default: `3000`):
 
 ```bash
 # 1. Build production bundles
@@ -134,7 +148,7 @@ pnpm run build
 
 # 2. Start the production server
 pnpm start
-# or: node server/index.js
+# or: node apps/server/dist/index.js
 ```
 
 Then open your browser at `http://localhost:3000` or check the health check endpoint:

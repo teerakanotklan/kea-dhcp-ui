@@ -465,7 +465,7 @@ run_step "[6/8] Installing project dependencies & building production bundle via
     set -e
     cd "'"$INSTALL_DIR"'"
     export CI=true
-    rm -rf client/dist server/dist client/node_modules/.vite
+    rm -rf apps/client/dist apps/server/dist packages/shared/dist client/dist server/dist
     pnpm install --no-frozen-lockfile --config.confirmModulesPurge=false
     pnpm run build
 '
@@ -475,7 +475,7 @@ run_step "[6/8] Installing project dependencies & building production bundle via
 # Step 7: Secrets and Initial Admin Account
 ENV_DIR="/etc/kea-dhcp-ui"
 ENV_FILE="${ENV_DIR}/env"
-DATA_DIR="${INSTALL_DIR}/server/data"
+DATA_DIR="${INSTALL_DIR}/apps/server/data"
 USERS_FILE="${DATA_DIR}/users.json"
 ADMIN_PASSWORD_MSG="(unchanged - existing account preserved)"
 
@@ -506,6 +506,7 @@ if [[ ! -f "$USERS_FILE" ]]; then
 const fs = require('fs');
 const path = require('path');
 const p = [
+  path.join('${INSTALL_DIR}', 'apps', 'server', 'dist', 'services', 'authService.js'),
   path.join('${INSTALL_DIR}', 'server', 'dist', 'server', 'src', 'services', 'authService.js'),
   path.join('${INSTALL_DIR}', 'server', 'dist', 'services', 'authService.js'),
   path.join('${INSTALL_DIR}', 'server', 'services', 'authService.js')
@@ -533,13 +534,14 @@ User='"${SYSTEM_USER}"'
 Group='"${SYSTEM_USER}"'
 WorkingDirectory='"${INSTALL_DIR}"'
 Environment=NODE_ENV=production
+Environment=PRODUCTION=YES
 Environment=KEA_DHCP4_SERVICE='"${KEA_DHCP4_SERVICE}"'
 Environment=KEA_CTRL_AGENT_SERVICE='"${KEA_AGENT_SERVICE}"'
 Environment=KEA_CTRL_AGENT_URL=http://127.0.0.1:8000
 Environment=KEA_CONF_PATH='"${KEA_CONF}"'
 Environment=KEA_HELPER_PATH='"${HELPER}"'
 EnvironmentFile='"${ENV_FILE}"'
-ExecStart='"${NODE_BIN}"' server/index.js
+ExecStart='"${NODE_BIN}"' apps/server/dist/index.js
 Restart=always
 RestartSec=5
 StandardOutput=journal

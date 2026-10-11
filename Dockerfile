@@ -12,8 +12,9 @@ RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
 
 # Copy dependency manifests
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY server/package.json ./server/
-COPY client/package.json ./client/
+COPY apps/server/package.json ./apps/server/
+COPY apps/client/package.json ./apps/client/
+COPY packages/shared/package.json ./packages/shared/
 
 # Install all dependencies
 RUN pnpm install --frozen-lockfile
@@ -21,7 +22,7 @@ RUN pnpm install --frozen-lockfile
 # Copy source files
 COPY . .
 
-# Build server and client
+# Build shared package, server, and client
 RUN pnpm run build
 
 # Stage 2: Lean Production Runtime
@@ -38,18 +39,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Enable pnpm
 RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
 
-# Copy root & server dependency manifests
+# Copy root & workspaces dependency manifests
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY server/package.json ./server/
+COPY apps/server/package.json ./apps/server/
+COPY packages/shared/package.json ./packages/shared/
 
 # Install production dependencies only
 RUN pnpm install --prod --frozen-lockfile
 
 # Copy built production artifacts
-COPY --from=builder /app/server/dist ./server/dist
-COPY --from=builder /app/server/index.js ./server/index.js
-COPY --from=builder /app/client/dist ./client/dist
-COPY --from=builder /app/server/data ./server/data
+COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
+COPY --from=builder /app/apps/server/dist ./apps/server/dist
+COPY --from=builder /app/apps/client/dist ./apps/client/dist
+COPY --from=builder /app/apps/server/data ./apps/server/data
 
 # Configuration & Environment
 ENV NODE_ENV=production
@@ -60,4 +62,4 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD curl -f http://127.0.0.1:3000/api/health || exit 1
 
-CMD ["node", "server/index.js"]
+CMD ["node", "apps/server/dist/index.js"]

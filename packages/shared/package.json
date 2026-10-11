@@ -1,0 +1,25 @@
+{
+  "name": "@kea/shared",
+  "version": "1.0.0",
+  "description": "Shared TypeScript definitions, schemas, and DTOs for Kea DHCP UI",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "build:watch": "tsc --watch --preserveWatchOutput",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5"
+  }
+}
